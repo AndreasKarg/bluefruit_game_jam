@@ -7,5 +7,3 @@ edition = "2018"
 
 [dependencies]
 engine = { path = "../engine" }
-bevy = "0.5"
-bevy_egui = "0.5"

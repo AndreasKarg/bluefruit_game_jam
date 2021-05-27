@@ -1263,6 +1263,10 @@ checksum = "3e73d6c8c70eadb71756fbbc3c303ab25e163b46b656886dd250de5636efea12"
 [[package]]
 name = "engine"
 version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_egui",
+]
 
 [[package]]
 name = "env_logger"
@@ -1315,8 +1319,6 @@ checksum = "f7531096570974c3a9dcf9e4b8e1cede1ec26cf5046219fb3b9d897503b9be59"
 name = "experiments"
 version = "0.1.0"
 dependencies = [
- "bevy",
- "bevy_egui",
  "engine",
 ]
 
