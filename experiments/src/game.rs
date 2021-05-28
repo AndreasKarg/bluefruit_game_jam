@@ -3,6 +3,16 @@ use engine::{
     bevy_egui::{egui, EguiContext},
 };
 
+#[derive(Debug)]
+pub struct BadThing(i32);
+pub struct GoodThing(i32);
+
+pub fn init_stuff(mut commands: Commands) {
+    commands.spawn().insert(BadThing(1));
+    commands.spawn().insert(BadThing(2));
+    commands.spawn().insert(BadThing(3));
+}
+
 #[derive(Default)]
 pub struct UiState {
     label: String,
@@ -14,9 +24,12 @@ pub struct UiState {
 const BEVY_TEXTURE_ID: u64 = 0;
 
 pub fn ui_example(
+    mut commands: Commands,
     mut egui_ctx: ResMut<EguiContext>,
     mut ui_state: ResMut<UiState>,
     assets: Res<AssetServer>,
+    bad_things: Query<(Entity, &BadThing)>,
+    good_things: Query<(Entity, &GoodThing)>,
 ) {
     let mut load = false;
     let mut remove = false;
@@ -46,6 +59,31 @@ pub fn ui_example(
             egui::TextureId::User(BEVY_TEXTURE_ID),
             [256.0, 256.0],
         ));
+
+        ui.label("Bad things start here.");
+        for (bad_thing_entity, bad_thing) in bad_things.iter() {
+            ui.label(format!("Bad thing #{}", bad_thing.0));
+            if ui.button("Make good!").clicked() {
+                let idx = bad_thing.0;
+                let bad_thing_owned = commands
+                    .entity(bad_thing_entity)
+                    .remove::<BadThing>()
+                    .insert(GoodThing(idx));
+            }
+        }
+        ui.label("Bad things end here.");
+        ui.label("Good things start here.");
+        for (good_thing_entity, good_thing) in good_things.iter() {
+            ui.label(format!("Good thing #{}", good_thing.0));
+            if ui.button("Make bad!").clicked() {
+                let idx = good_thing.0;
+                let bad_thing_owned = commands
+                    .entity(good_thing_entity)
+                    .remove::<GoodThing>()
+                    .insert(BadThing(idx));
+            }
+        }
+        ui.label("Good things end here.");
 
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
             ui.add(egui::Hyperlink::new("https://github.com/emilk/egui/").text("powered by egui"));
