@@ -124,15 +124,15 @@ pub fn units_meet_enemies(
         .filter(|unit| matches!(**unit, Unit::Patrolling(_)))
         .collect();
     units.sort_by(|a, b| {
-        a.progress_percent()
-            .partial_cmp(&b.progress_percent())
+        b.progress_percent()
+            .partial_cmp(&a.progress_percent())
             .unwrap()
     });
 
     let mut enemies: Vec<_> = enemies.iter_mut().collect();
     enemies.sort_by(|(_, a), (_, b)| {
-        b.remaining_percent()
-            .partial_cmp(&a.remaining_percent())
+        a.remaining_percent()
+            .partial_cmp(&b.remaining_percent())
             .unwrap()
     });
 
@@ -147,6 +147,38 @@ pub fn units_meet_enemies(
         *first_unit = Unit::Unready;
         commands.entity(first_enemy_entity).despawn();
     }
+}
+
+pub struct EnemySpawner {
+    timer: Timer,
+}
+
+impl Default for EnemySpawner {
+    fn default() -> Self {
+        Self {
+            timer: Timer::new(Duration::from_secs_f64(15.0), true),
+        }
+    }
+}
+
+impl EnemySpawner {
+    fn tick(&mut self, time: &Time, mut commands: Commands) {
+        self.timer.tick(time.delta());
+
+        if self.timer.finished() {
+            commands
+                .spawn()
+                .insert(Enemy::new(Duration::from_secs_f64(20.0)));
+        }
+    }
+}
+
+pub fn spawn_enemies(
+    mut enemy_spawner: ResMut<EnemySpawner>,
+    time: Res<Time>,
+    mut commands: Commands,
+) {
+    enemy_spawner.tick(&time, commands);
 }
 
 pub fn gui(
