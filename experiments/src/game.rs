@@ -286,6 +286,7 @@ pub fn gui(
     mut enemies: Query<&mut Enemy>,
     mut parking_spaces: ResMut<TokenPool<ParkingSpace>>,
     mut ev_game_over: EventReader<GameOver>,
+    time: Res<Time>,
 ) {
     egui::TopPanel::top("top_panel").show(egui_ctx.ctx(), |ui| {
         // The top panel is often a good place for a menu bar:
@@ -455,9 +456,15 @@ pub fn gui(
     });
 
     for _ in ev_game_over.iter() {
-        egui::Window::new("Visitor!").show(egui_ctx.ctx(), |ui| {
-            ui.heading("Visitor has arrived! You are dead !!!!");
-            if ui.button("Oh dear. :-(").clicked() {
+        egui::Window::new("Hit!").show(egui_ctx.ctx(), |ui| {
+            let survival_duration = time.time_since_startup().as_secs_f64();
+
+            ui.heading("Your base was hit! You are dead !!!!");
+            ui.label(format!(
+                "You survived for {:.0} seconds though, which is great! Now take a screenshot and brag to your friends about your m4d sk1llz :-D",
+                survival_duration
+            ));
+            if ui.button("Thanks man! This was totally fun!! Let me try this again...").clicked() {
                 std::process::exit(0);
             };
         });

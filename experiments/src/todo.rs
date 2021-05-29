@@ -1,4 +1,4 @@
-// TODO: UI tidy-up
+// DONE: UI tidy-up
 // TODO: Theming
 // TODO: Maintenance
 // TODO: Collisions
@@ -8,3 +8,4 @@
 // TODO: Reconnaisance
 // TODO: Special launch/return mechanics per unit type
 // TODO: In-base movement
+// TODO: Pause and stopping at game over
