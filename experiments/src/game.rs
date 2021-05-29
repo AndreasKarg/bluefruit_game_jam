@@ -73,16 +73,6 @@ impl Unit {
         }
     }
 
-    fn combat_type(&self) -> CombatType {
-        match self {
-            Unit::ParkedReady(_, combat_type) => *combat_type,
-            Unit::Patrolling(_, combat_type) => *combat_type,
-            invalid_state => {
-                panic!("No combat type in this state: {:#?}", invalid_state)
-            }
-        }
-    }
-
     fn draw_in_unit_list(&mut self, ui: &mut Ui, parking_spaces: &mut TokenPool<ParkingSpace>) {
         match self {
             Unit::Mothballed => {
@@ -213,10 +203,6 @@ impl Enemy {
 
     fn remaining_percent(&self) -> f32 {
         self.progress.percent_left()
-    }
-
-    fn combat_type(&self) -> CombatType {
-        self.combat_type
     }
 }
 
