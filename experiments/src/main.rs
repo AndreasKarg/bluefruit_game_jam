@@ -1,6 +1,6 @@
 use engine::bevy::prelude::*;
 
-use crate::game::{gui, init_stuff};
+use crate::game::{gui, init_stuff, units_meet_enemies};
 
 mod game;
 
@@ -13,6 +13,7 @@ struct MyGame;
 impl Plugin for MyGame {
     fn build(&self, app: &mut AppBuilder) {
         app.add_startup_system(init_stuff.system())
-            .add_system(gui.system());
+            .add_system(gui.system())
+            .add_system(units_meet_enemies.system());
     }
 }

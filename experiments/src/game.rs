@@ -8,16 +8,27 @@ pub enum Unit {
     Unready,
     Preparing(Timer),
     Ready,
+    Patrolling(Timer),
 }
 
 impl Unit {
     fn tick(&mut self, time: &Time) {
-        if let Self::Preparing(timer) = self {
-            timer.tick(time.delta());
+        match self {
+            Self::Preparing(timer) => {
+                timer.tick(time.delta());
 
-            if timer.finished() {
-                *self = Self::Ready;
+                if timer.finished() {
+                    *self = Self::Ready;
+                }
             }
+            Self::Patrolling(timer) => {
+                timer.tick(time.delta());
+
+                if timer.finished() {
+                    *self = Self::Unready;
+                }
+            }
+            _ => {}
         }
     }
 
@@ -31,9 +42,6 @@ impl Unit {
                     }
                 });
             }
-            Unit::Ready => {
-                ui.label("Ready");
-            }
             Unit::Preparing(timer) => {
                 ui.label(format!(
                     "Preparing. {:.0} / {:.1} seconds to go.",
@@ -41,7 +49,28 @@ impl Unit {
                     (timer.duration() - timer.elapsed()).as_secs_f64()
                 ));
             }
+            Unit::Ready => {
+                ui.horizontal(|ui| {
+                    ui.label("Ready");
+                    if ui.button("Take off!").clicked() {
+                        *self = Self::Patrolling(Timer::from_seconds(30.0, false))
+                    }
+                });
+            }
+            Unit::Patrolling(timer) => {
+                ui.label(format!(
+                    "Patrolling. Time remaining: {:.1}s",
+                    (timer.duration() - timer.elapsed()).as_secs_f64()
+                ));
+            }
         };
+    }
+
+    fn progress_percent(&self) -> f32 {
+        match self {
+            Self::Patrolling(timer) => timer.percent(),
+            _ => 0.0,
+        }
     }
 }
 
@@ -70,6 +99,10 @@ impl Enemy {
             (self.progress.duration() - self.progress.elapsed()).as_secs_f64()
         ));
     }
+
+    fn remaining_percent(&self) -> f32 {
+        self.progress.percent_left()
+    }
 }
 
 pub fn init_stuff(mut commands: Commands) {
@@ -79,6 +112,41 @@ pub fn init_stuff(mut commands: Commands) {
     commands
         .spawn()
         .insert(Enemy::new(Duration::from_secs_f64(20.0)));
+}
+
+pub fn units_meet_enemies(
+    mut commands: Commands,
+    mut units: Query<&mut Unit>,
+    mut enemies: Query<(Entity, &mut Enemy)>,
+) {
+    let mut units: Vec<_> = units
+        .iter_mut()
+        .filter(|unit| matches!(**unit, Unit::Patrolling(_)))
+        .collect();
+    units.sort_by(|a, b| {
+        a.progress_percent()
+            .partial_cmp(&b.progress_percent())
+            .unwrap()
+    });
+
+    let mut enemies: Vec<_> = enemies.iter_mut().collect();
+    enemies.sort_by(|(_, a), (_, b)| {
+        b.remaining_percent()
+            .partial_cmp(&a.remaining_percent())
+            .unwrap()
+    });
+
+    if (units.len() == 0) || (enemies.len() == 0) {
+        return;
+    }
+
+    let mut first_unit = units.remove(0);
+    let (first_enemy_entity, first_enemy) = enemies.remove(0);
+
+    if first_unit.progress_percent() >= first_enemy.remaining_percent() {
+        *first_unit = Unit::Unready;
+        commands.entity(first_enemy_entity).despawn();
+    }
 }
 
 pub fn gui(
@@ -102,8 +170,8 @@ pub fn gui(
         for mut enemy in enemies.iter_mut() {
             enemy.tick(&time);
             if enemy.reached_destination() {
-                egui::Window::new("Hit!").show(egui_ctx.ctx(), |ui| {
-                    ui.heading("You got hit! You are dead !!!!");
+                egui::Window::new("Visitor!").show(egui_ctx.ctx(), |ui| {
+                    ui.heading("Visitor has arrived! You are dead !!!!");
                     if ui.button("Oh dear. :-(").clicked() {
                         std::process::exit(0);
                     };
