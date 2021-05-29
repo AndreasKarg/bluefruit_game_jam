@@ -1,5 +1,5 @@
 use engine::{
-    bevy::prelude::*,
+    bevy::{prelude::*, utils::Duration},
     bevy_egui::{egui, egui::Ui, EguiContext},
 };
 
@@ -45,27 +45,71 @@ impl Unit {
     }
 }
 
-pub enum Enemy {}
+pub struct Enemy {
+    progress: Timer,
+}
+
+impl Enemy {
+    fn new(run_time: Duration) -> Self {
+        Self {
+            progress: Timer::new(run_time, false),
+        }
+    }
+
+    fn tick(&mut self, time: &Time) {
+        self.progress.tick(time.delta());
+    }
+
+    fn reached_destination(&self) -> bool {
+        self.progress.finished()
+    }
+
+    fn draw_in_enemy_list(&self, ui: &mut Ui) {
+        ui.label(format!(
+            "Enemy! Time left: {:.1}s",
+            (self.progress.duration() - self.progress.elapsed()).as_secs_f64()
+        ));
+    }
+}
 
 pub fn init_stuff(mut commands: Commands) {
     commands.spawn().insert(Unit::Unready);
     commands.spawn().insert(Unit::Unready);
     commands.spawn().insert(Unit::Unready);
+    commands
+        .spawn()
+        .insert(Enemy::new(Duration::from_secs_f64(20.0)));
 }
 
 pub fn gui(
     mut commands: Commands,
     mut egui_ctx: ResMut<EguiContext>,
     _assets: Res<AssetServer>,
-    mut units: Query<(Entity, &mut Unit)>,
+    mut units: Query<&mut Unit>,
     time: Res<Time>,
-    enemies: Query<(Entity, &Enemy)>,
+    mut enemies: Query<&mut Enemy>,
 ) {
     egui::SidePanel::left("side_panel", 200.0).show(egui_ctx.ctx(), |ui| {
         ui.heading("Units");
-        for (unit_entity, mut unit) in units.iter_mut() {
+        for mut unit in units.iter_mut() {
             unit.tick(&time);
             unit.draw_in_unit_list(ui);
+        }
+
+        ui.separator();
+
+        ui.heading("Enemies");
+        for mut enemy in enemies.iter_mut() {
+            enemy.tick(&time);
+            if enemy.reached_destination() {
+                egui::Window::new("Hit!").show(egui_ctx.ctx(), |ui| {
+                    ui.heading("You got hit! You are dead !!!!");
+                    if ui.button("Oh dear. :-(").clicked() {
+                        std::process::exit(0);
+                    };
+                });
+            }
+            enemy.draw_in_enemy_list(ui);
         }
     });
 
