@@ -3,7 +3,9 @@ use std::{cmp::Ordering, marker::PhantomData, mem::discriminant, sync::Arc};
 use engine::{
     bevy::{
         ecs::prelude::{Entity, Mut},
-        prelude::{AssetServer, Commands, Query, Res, ResMut, Time, Timer},
+        prelude::{
+            AssetServer, Commands, EventReader, EventWriter, Query, Res, ResMut, Time, Timer,
+        },
         utils::Duration,
     },
     bevy_egui::{
@@ -91,42 +93,6 @@ impl Unit {
         }
     }
 
-    fn draw_in_unit_list(&mut self, ui: &mut Ui, parking_spaces: &mut TokenPool<ParkingSpace>) {
-        match self {
-            Unit::Mothballed => {
-                ui.horizontal(|ui| {
-                    ui.label("Mothballed");
-                    if !parking_spaces.can_take() {
-                        ui.set_enabled(false);
-                    }
-
-                    if ui.button("UnMothball").clicked() {
-                        let parking_space = parking_spaces.try_take().unwrap();
-
-                        *self =
-                            Self::UnMothballing(Timer::from_seconds(10.0, false), parking_space);
-                    }
-                });
-            }
-
-            Unit::Patrolling(timer, combat_type) => {
-                ui.label(format!(
-                    "Patrolling combat type {}. Time remaining: {:.1}s",
-                    combat_type,
-                    (timer.duration() - timer.elapsed()).as_secs_f64()
-                ));
-            }
-            Unit::Returning(timer, _) => {
-                ui.label(format!(
-                    "Returning. Time remaining: {:.1}s",
-                    (timer.duration() - timer.elapsed()).as_secs_f64()
-                ));
-            }
-
-            _ => {}
-        };
-    }
-
     fn progress_percent(&self) -> f32 {
         match self {
             Self::Patrolling(timer, _) => timer.percent(),
@@ -192,14 +158,6 @@ impl Enemy {
 
     fn reached_destination(&self) -> bool {
         self.progress.finished()
-    }
-
-    fn draw_in_enemy_list(&self, ui: &mut Ui) {
-        ui.label(format!(
-            "Enemy of type {}! Time left: {:.1}s",
-            self.combat_type,
-            (self.progress.duration() - self.progress.elapsed()).as_secs_f64()
-        ));
     }
 
     fn remaining_percent(&self) -> f32 {
@@ -300,38 +258,35 @@ impl<T> TokenPool<T> {
     }
 }
 
+pub struct GameOver {}
+
+pub fn ticker(
+    time: Res<Time>,
+    mut units: Query<&mut Unit>,
+    mut enemies: Query<&mut Enemy>,
+    mut parking_spaces: ResMut<TokenPool<ParkingSpace>>,
+    mut ev_game_over: EventWriter<GameOver>,
+) {
+    for mut unit in units.iter_mut() {
+        unit.tick(&time, &mut parking_spaces);
+    }
+
+    for mut enemy in enemies.iter_mut() {
+        enemy.tick(&time);
+        if enemy.progress.finished() {
+            ev_game_over.send(GameOver {})
+        }
+    }
+}
+
 pub fn gui(
     egui_ctx: ResMut<EguiContext>,
     _assets: Res<AssetServer>,
     mut units: Query<&mut Unit>,
-    time: Res<Time>,
     mut enemies: Query<&mut Enemy>,
     mut parking_spaces: ResMut<TokenPool<ParkingSpace>>,
+    mut ev_game_over: EventReader<GameOver>,
 ) {
-    egui::SidePanel::left("side_panel", 200.0).show(egui_ctx.ctx(), |ui| {
-        ui.heading("Units");
-        for mut unit in units.iter_mut() {
-            unit.tick(&time, &mut parking_spaces);
-            unit.draw_in_unit_list(ui, &mut parking_spaces);
-        }
-
-        ui.separator();
-
-        ui.heading("Enemies");
-        for mut enemy in enemies.iter_mut() {
-            enemy.tick(&time);
-            if enemy.reached_destination() {
-                egui::Window::new("Visitor!").show(egui_ctx.ctx(), |ui| {
-                    ui.heading("Visitor has arrived! You are dead !!!!");
-                    if ui.button("Oh dear. :-(").clicked() {
-                        std::process::exit(0);
-                    };
-                });
-            }
-            enemy.draw_in_enemy_list(ui);
-        }
-    });
-
     egui::TopPanel::top("top_panel").show(egui_ctx.ctx(), |ui| {
         // The top panel is often a good place for a menu bar:
         egui::menu::bar(ui, |ui| {
@@ -498,4 +453,13 @@ pub fn gui(
             ui.separator();
         }
     });
+
+    for _ in ev_game_over.iter() {
+        egui::Window::new("Visitor!").show(egui_ctx.ctx(), |ui| {
+            ui.heading("Visitor has arrived! You are dead !!!!");
+            if ui.button("Oh dear. :-(").clicked() {
+                std::process::exit(0);
+            };
+        });
+    }
 }
