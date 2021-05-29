@@ -3,30 +3,45 @@ use engine::{
     bevy_egui::{egui, egui::Ui, EguiContext},
 };
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub enum Unit {
     Unready,
+    Preparing(Timer),
     Ready,
 }
 
 impl Unit {
+    fn tick(&mut self, time: &Time) {
+        if let Self::Preparing(timer) = self {
+            timer.tick(time.delta());
+
+            if timer.finished() {
+                *self = Self::Ready;
+            }
+        }
+    }
+
     fn draw_in_unit_list(&mut self, ui: &mut Ui) {
-        let mut new_state = *self;
         match self {
             Unit::Unready => {
                 ui.horizontal(|ui| {
                     ui.label("Unready");
                     if ui.button("Prepare").clicked() {
-                        new_state = Self::Ready
+                        *self = Self::Preparing(Timer::from_seconds(5.0, false))
                     }
                 });
             }
             Unit::Ready => {
                 ui.label("Ready");
             }
+            Unit::Preparing(timer) => {
+                ui.label(format!(
+                    "Preparing. {:.0} / {:.1} seconds to go.",
+                    timer.percent() * 100.0,
+                    (timer.duration() - timer.elapsed()).as_secs_f64()
+                ));
+            }
         };
-
-        *self = new_state;
     }
 }
 
@@ -43,11 +58,13 @@ pub fn gui(
     mut egui_ctx: ResMut<EguiContext>,
     _assets: Res<AssetServer>,
     mut units: Query<(Entity, &mut Unit)>,
+    time: Res<Time>,
     enemies: Query<(Entity, &Enemy)>,
 ) {
     egui::SidePanel::left("side_panel", 200.0).show(egui_ctx.ctx(), |ui| {
         ui.heading("Units");
         for (unit_entity, mut unit) in units.iter_mut() {
+            unit.tick(&time);
             unit.draw_in_unit_list(ui);
         }
     });
