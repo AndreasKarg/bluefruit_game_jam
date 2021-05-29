@@ -211,7 +211,7 @@ pub fn units_meet_enemies(
             .unwrap()
     });
 
-    if (units.len() == 0) || (enemies.len() == 0) {
+    if units.is_empty() || enemies.is_empty() {
         return;
     }
 
@@ -248,11 +248,7 @@ impl EnemySpawner {
     }
 }
 
-pub fn spawn_enemies(
-    mut enemy_spawner: ResMut<EnemySpawner>,
-    time: Res<Time>,
-    mut commands: Commands,
-) {
+pub fn spawn_enemies(mut enemy_spawner: ResMut<EnemySpawner>, time: Res<Time>, commands: Commands) {
     enemy_spawner.tick(&time, commands);
 }
 
@@ -288,8 +284,7 @@ impl<T> TokenPool<T> {
 }
 
 pub fn gui(
-    mut commands: Commands,
-    mut egui_ctx: ResMut<EguiContext>,
+    egui_ctx: ResMut<EguiContext>,
     _assets: Res<AssetServer>,
     mut units: Query<&mut Unit>,
     time: Res<Time>,
