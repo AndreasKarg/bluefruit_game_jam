@@ -1,3 +1,5 @@
+use std::{marker::PhantomData, sync::Arc};
+
 use engine::{
     bevy::{prelude::*, utils::Duration},
     bevy_egui::{egui, egui::Ui, EguiContext},
@@ -6,80 +8,106 @@ use engine::{
 #[derive(Debug, Clone)]
 pub enum Unit {
     Mothballed,
-    UnMothballing(Timer),
-    ParkedUnready,
-    ParkedPreparing(Timer),
-    ParkedReady,
+    UnMothballing(Timer, Token<ParkingSpace>),
+    ParkedUnready(Token<ParkingSpace>),
+    ParkedPreparing(Timer, Token<ParkingSpace>),
+    ParkedReady(Token<ParkingSpace>),
     Patrolling(Timer),
     Returning(Timer),
+    WaitingToPark,
 }
 
 impl Unit {
-    fn tick(&mut self, time: &Time) {
+    fn tick(&mut self, time: &Time, parking_spaces: &mut TokenPool<ParkingSpace>) {
         match self {
-            Self::ParkedPreparing(timer) => {
+            Self::ParkedPreparing(timer, parking_space) => {
                 timer.tick(time.delta());
 
                 if timer.finished() {
-                    *self = Self::ParkedReady;
+                    *self = Self::ParkedReady(parking_space.clone());
                 }
             }
             Self::Patrolling(timer) => {
                 timer.tick(time.delta());
 
                 if timer.finished() {
-                    *self = Self::ParkedUnready;
+                    self.try_to_park(parking_spaces);
                 }
             }
             Self::Returning(timer) => {
                 timer.tick(time.delta());
 
                 if timer.finished() {
-                    *self = Self::ParkedUnready;
+                    self.try_to_park(parking_spaces);
                 }
             }
-            Self::UnMothballing(timer) => {
+            Self::UnMothballing(timer, parking_space) => {
                 timer.tick(time.delta());
 
                 if timer.finished() {
-                    *self = Self::ParkedUnready;
+                    *self = Self::ParkedUnready(parking_space.clone());
                 }
+            }
+            Self::WaitingToPark => {
+                self.try_to_park(parking_spaces);
             }
             _ => {}
         }
     }
 
-    fn draw_in_unit_list(&mut self, ui: &mut Ui) {
+    fn try_to_park(&mut self, parking_spaces: &mut TokenPool<ParkingSpace>) {
+        if let Some(parking_space) = parking_spaces.try_take() {
+            *self = Self::ParkedUnready(parking_space);
+        } else {
+            *self = Self::WaitingToPark;
+        }
+    }
+
+    fn draw_in_unit_list(&mut self, ui: &mut Ui, parking_spaces: &mut TokenPool<ParkingSpace>) {
         match self {
             Unit::Mothballed => {
-                ui.label("Mothballed");
-                if ui.button("UnMothball").clicked() {
-                    *self = Self::UnMothballing(Timer::from_seconds(10.0, false))
-                }
+                ui.horizontal(|ui| {
+                    ui.label("Mothballed");
+                    if !parking_spaces.can_take() {
+                        ui.set_enabled(false);
+                    }
+
+                    if ui.button("UnMothball").clicked() {
+                        let parking_space = parking_spaces.try_take().unwrap();
+
+                        *self =
+                            Self::UnMothballing(Timer::from_seconds(10.0, false), parking_space);
+                    }
+                });
             }
-            Unit::UnMothballing(timer) => {
+            Unit::UnMothballing(timer, _) => {
                 ui.label(format!(
                     "UnMothballing. {:.0} / {:.1} seconds to go.",
                     timer.percent() * 100.0,
                     (timer.duration() - timer.elapsed()).as_secs_f64()
                 ));
             }
-            Unit::ParkedUnready => {
-                ui.horizontal(|ui| {
+            Unit::ParkedUnready(parking_space) => {
+                let prepare_clicked = ui.horizontal(|ui| {
                     ui.label("Unready");
-                    if ui.button("Prepare").clicked() {
-                        *self = Self::ParkedPreparing(Timer::from_seconds(5.0, false))
-                    }
+                    ui.button("Prepare").clicked()
                 });
+
+                if prepare_clicked.inner {
+                    *self = Self::ParkedPreparing(
+                        Timer::from_seconds(5.0, false),
+                        parking_space.clone(),
+                    )
+                }
             }
-            Unit::ParkedPreparing(timer) => {
+            Unit::ParkedPreparing(timer, _) => {
                 ui.label(format!(
                     "Preparing. {:.0} / {:.1} seconds to go.",
                     timer.percent() * 100.0,
                     (timer.duration() - timer.elapsed()).as_secs_f64()
                 ));
             }
-            Unit::ParkedReady => {
+            Unit::ParkedReady(_) => {
                 ui.horizontal(|ui| {
                     ui.label("Ready");
                     if ui.button("Take off!").clicked() {
@@ -98,6 +126,9 @@ impl Unit {
                     "Returning. Time remaining: {:.1}s",
                     (timer.duration() - timer.elapsed()).as_secs_f64()
                 ));
+            }
+            Unit::WaitingToPark => {
+                ui.label("Waiting for parking space.");
             }
         };
     }
@@ -225,6 +256,37 @@ pub fn spawn_enemies(
     enemy_spawner.tick(&time, commands);
 }
 
+#[derive(Debug, Clone)]
+pub struct ParkingSpace {}
+
+type Token<T> = Arc<PhantomData<T>>;
+
+pub struct TokenPool<T> {
+    token_holder: Arc<PhantomData<T>>,
+    max_count: usize,
+}
+
+impl<T> TokenPool<T> {
+    pub fn new(initial_count: usize) -> Self {
+        Self {
+            token_holder: Arc::new(PhantomData),
+            max_count: initial_count,
+        }
+    }
+
+    pub fn try_take(&mut self) -> Option<Token<T>> {
+        if !self.can_take() {
+            return None;
+        }
+
+        Some(self.token_holder.clone())
+    }
+
+    pub fn can_take(&self) -> bool {
+        Arc::strong_count(&self.token_holder) < self.max_count + 1
+    }
+}
+
 pub fn gui(
     mut commands: Commands,
     mut egui_ctx: ResMut<EguiContext>,
@@ -232,12 +294,13 @@ pub fn gui(
     mut units: Query<&mut Unit>,
     time: Res<Time>,
     mut enemies: Query<&mut Enemy>,
+    mut parking_spaces: ResMut<TokenPool<ParkingSpace>>,
 ) {
     egui::SidePanel::left("side_panel", 200.0).show(egui_ctx.ctx(), |ui| {
         ui.heading("Units");
         for mut unit in units.iter_mut() {
-            unit.tick(&time);
-            unit.draw_in_unit_list(ui);
+            unit.tick(&time, &mut parking_spaces);
+            unit.draw_in_unit_list(ui, &mut parking_spaces);
         }
 
         ui.separator();
