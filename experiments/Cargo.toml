@@ -7,3 +7,6 @@ edition = "2018"
 
 [dependencies]
 engine = { path = "../engine" }
+rand_derive2 = "0.1"
+rand = "0.8"
+strum = { version = "0.20", features = ["derive"] }

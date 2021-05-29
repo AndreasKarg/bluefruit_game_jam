@@ -4,15 +4,25 @@ use engine::{
     bevy::{prelude::*, utils::Duration},
     bevy_egui::{egui, egui::Ui, EguiContext},
 };
+use rand_derive2::RandGen;
+use strum::{Display, EnumIter, IntoEnumIterator};
+
+#[derive(RandGen, EnumIter, Display, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CombatType {
+    A,
+    B,
+    C,
+    D,
+}
 
 #[derive(Debug, Clone)]
 pub enum Unit {
     Mothballed,
     UnMothballing(Timer, Token<ParkingSpace>),
     ParkedUnready(Token<ParkingSpace>),
-    ParkedPreparing(Timer, Token<ParkingSpace>),
-    ParkedReady(Token<ParkingSpace>),
-    Patrolling(Timer),
+    ParkedPreparing(Timer, Token<ParkingSpace>, CombatType),
+    ParkedReady(Token<ParkingSpace>, CombatType),
+    Patrolling(Timer, CombatType),
     Returning(Timer),
     WaitingToPark,
 }
@@ -20,14 +30,14 @@ pub enum Unit {
 impl Unit {
     fn tick(&mut self, time: &Time, parking_spaces: &mut TokenPool<ParkingSpace>) {
         match self {
-            Self::ParkedPreparing(timer, parking_space) => {
+            Self::ParkedPreparing(timer, parking_space, combat_type) => {
                 timer.tick(time.delta());
 
                 if timer.finished() {
-                    *self = Self::ParkedReady(parking_space.clone());
+                    *self = Self::ParkedReady(parking_space.clone(), *combat_type);
                 }
             }
-            Self::Patrolling(timer) => {
+            Self::Patrolling(timer, _) => {
                 timer.tick(time.delta());
 
                 if timer.finished() {
@@ -63,6 +73,16 @@ impl Unit {
         }
     }
 
+    fn combat_type(&self) -> CombatType {
+        match self {
+            Unit::ParkedReady(_, combat_type) => *combat_type,
+            Unit::Patrolling(_, combat_type) => *combat_type,
+            invalid_state => {
+                panic!("No combat type in this state: {:#?}", invalid_state)
+            }
+        }
+    }
+
     fn draw_in_unit_list(&mut self, ui: &mut Ui, parking_spaces: &mut TokenPool<ParkingSpace>) {
         match self {
             Unit::Mothballed => {
@@ -88,36 +108,49 @@ impl Unit {
                 ));
             }
             Unit::ParkedUnready(parking_space) => {
-                let prepare_clicked = ui.horizontal(|ui| {
+                let mut selected_combat_type = None;
+                ui.horizontal(|ui| {
                     ui.label("Unready");
-                    ui.button("Prepare").clicked()
+                    ui.group(|ui| {
+                        ui.label("Preparations");
+                        for combat_type in CombatType::iter() {
+                            if ui.button(combat_type.to_string()).clicked() {
+                                selected_combat_type = Some(combat_type);
+                            }
+                        }
+                    })
                 });
 
-                if prepare_clicked.inner {
+                if let Some(combat_type) = selected_combat_type {
                     *self = Self::ParkedPreparing(
                         Timer::from_seconds(5.0, false),
                         parking_space.clone(),
+                        combat_type,
                     )
                 }
             }
-            Unit::ParkedPreparing(timer, _) => {
+            Unit::ParkedPreparing(timer, _, combat_type) => {
                 ui.label(format!(
-                    "Preparing. {:.0} / {:.1} seconds to go.",
+                    "Preparing combat type {}. {:.0} / {:.1} seconds to go.",
+                    combat_type,
                     timer.percent() * 100.0,
                     (timer.duration() - timer.elapsed()).as_secs_f64()
                 ));
             }
-            Unit::ParkedReady(_) => {
-                ui.horizontal(|ui| {
-                    ui.label("Ready");
-                    if ui.button("Take off!").clicked() {
-                        *self = Self::Patrolling(Timer::from_seconds(30.0, false))
-                    }
+            Unit::ParkedReady(_, combat_type) => {
+                let take_off_clicked = ui.horizontal(|ui| {
+                    ui.label(format!("Ready for combat type {}.", combat_type));
+                    ui.button("Take off!").clicked()
                 });
+
+                if take_off_clicked.inner {
+                    *self = Self::Patrolling(Timer::from_seconds(30.0, false), *combat_type);
+                }
             }
-            Unit::Patrolling(timer) => {
+            Unit::Patrolling(timer, combat_type) => {
                 ui.label(format!(
-                    "Patrolling. Time remaining: {:.1}s",
+                    "Patrolling combat type {}. Time remaining: {:.1}s",
+                    combat_type,
                     (timer.duration() - timer.elapsed()).as_secs_f64()
                 ));
             }
@@ -135,13 +168,13 @@ impl Unit {
 
     fn progress_percent(&self) -> f32 {
         match self {
-            Self::Patrolling(timer) => timer.percent(),
+            Self::Patrolling(timer, _) => timer.percent(),
             _ => 0.0,
         }
     }
 
     fn return_to_base(&mut self) {
-        if let Self::Patrolling(timer) = self {
+        if let Self::Patrolling(timer, _) = self {
             *self = Self::Returning(timer.clone());
         } else {
             panic!("Invalid state for returning to base.");
@@ -151,12 +184,14 @@ impl Unit {
 
 pub struct Enemy {
     progress: Timer,
+    combat_type: CombatType,
 }
 
 impl Enemy {
-    fn new(run_time: Duration) -> Self {
+    fn new(run_time: Duration, combat_type: CombatType) -> Self {
         Self {
             progress: Timer::new(run_time, false),
+            combat_type,
         }
     }
 
@@ -170,13 +205,18 @@ impl Enemy {
 
     fn draw_in_enemy_list(&self, ui: &mut Ui) {
         ui.label(format!(
-            "Enemy! Time left: {:.1}s",
+            "Enemy of type {}! Time left: {:.1}s",
+            self.combat_type,
             (self.progress.duration() - self.progress.elapsed()).as_secs_f64()
         ));
     }
 
     fn remaining_percent(&self) -> f32 {
         self.progress.percent_left()
+    }
+
+    fn combat_type(&self) -> CombatType {
+        self.combat_type
     }
 }
 
@@ -186,7 +226,7 @@ pub fn init_stuff(mut commands: Commands) {
     commands.spawn().insert(Unit::Mothballed);
     commands
         .spawn()
-        .insert(Enemy::new(Duration::from_secs_f64(20.0)));
+        .insert(Enemy::new(Duration::from_secs_f64(20.0), CombatType::A));
 }
 
 pub fn units_meet_enemies(
@@ -194,33 +234,18 @@ pub fn units_meet_enemies(
     mut units: Query<&mut Unit>,
     mut enemies: Query<(Entity, &mut Enemy)>,
 ) {
-    let mut units: Vec<_> = units
-        .iter_mut()
-        .filter(|unit| matches!(**unit, Unit::Patrolling(_)))
-        .collect();
-    units.sort_by(|a, b| {
-        b.progress_percent()
-            .partial_cmp(&a.progress_percent())
-            .unwrap()
-    });
-
-    let mut enemies: Vec<_> = enemies.iter_mut().collect();
-    enemies.sort_by(|(_, a), (_, b)| {
-        a.remaining_percent()
-            .partial_cmp(&b.remaining_percent())
-            .unwrap()
-    });
-
-    if units.is_empty() || enemies.is_empty() {
-        return;
-    }
-
-    let mut first_unit = units.remove(0);
-    let (first_enemy_entity, first_enemy) = enemies.remove(0);
-
-    if first_unit.progress_percent() >= first_enemy.remaining_percent() {
-        first_unit.return_to_base();
-        commands.entity(first_enemy_entity).despawn();
+    for (enemy_entity, enemy) in enemies.iter_mut() {
+        let suitable_units = units.iter_mut().filter(|unit| {
+            matches!(**unit,
+                Unit::Patrolling(_, combat_type) if combat_type == enemy.combat_type
+            )
+        });
+        for mut unit in suitable_units {
+            if unit.progress_percent() >= enemy.remaining_percent() {
+                unit.return_to_base();
+                commands.entity(enemy_entity).despawn();
+            }
+        }
     }
 }
 
@@ -241,9 +266,10 @@ impl EnemySpawner {
         self.timer.tick(time.delta());
 
         if self.timer.finished() {
-            commands
-                .spawn()
-                .insert(Enemy::new(Duration::from_secs_f64(20.0)));
+            commands.spawn().insert(Enemy::new(
+                Duration::from_secs_f64(20.0),
+                CombatType::generate_random(),
+            ));
         }
     }
 }
