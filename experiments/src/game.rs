@@ -9,6 +9,7 @@ pub enum Unit {
     Preparing(Timer),
     Ready,
     Patrolling(Timer),
+    Returning(Timer),
 }
 
 impl Unit {
@@ -22,6 +23,13 @@ impl Unit {
                 }
             }
             Self::Patrolling(timer) => {
+                timer.tick(time.delta());
+
+                if timer.finished() {
+                    *self = Self::Unready;
+                }
+            }
+            Self::Returning(timer) => {
                 timer.tick(time.delta());
 
                 if timer.finished() {
@@ -63,6 +71,12 @@ impl Unit {
                     (timer.duration() - timer.elapsed()).as_secs_f64()
                 ));
             }
+            Unit::Returning(timer) => {
+                ui.label(format!(
+                    "Returning. Time remaining: {:.1}s",
+                    (timer.duration() - timer.elapsed()).as_secs_f64()
+                ));
+            }
         };
     }
 
@@ -70,6 +84,14 @@ impl Unit {
         match self {
             Self::Patrolling(timer) => timer.percent(),
             _ => 0.0,
+        }
+    }
+
+    fn return_to_base(&mut self) {
+        if let Self::Patrolling(timer) = self {
+            *self = Self::Returning(timer.clone());
+        } else {
+            panic!("Invalid state for returning to base.");
         }
     }
 }
@@ -144,7 +166,7 @@ pub fn units_meet_enemies(
     let (first_enemy_entity, first_enemy) = enemies.remove(0);
 
     if first_unit.progress_percent() >= first_enemy.remaining_percent() {
-        *first_unit = Unit::Unready;
+        first_unit.return_to_base();
         commands.entity(first_enemy_entity).despawn();
     }
 }
