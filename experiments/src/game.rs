@@ -2,7 +2,7 @@ use std::{cmp::Ordering, marker::PhantomData, mem::discriminant, sync::Arc};
 
 use engine::{
     bevy::{
-        ecs::prelude::Entity,
+        ecs::prelude::{Entity, Mut},
         prelude::{AssetServer, Commands, Query, Res, ResMut, Time, Timer},
         utils::Duration,
     },
@@ -14,6 +14,16 @@ use engine::{
 };
 use rand_derive2::RandGen;
 use strum::{Display, EnumIter, IntoEnumIterator};
+
+trait TimerRemaining {
+    fn remaining_seconds(&self) -> f32;
+}
+
+impl TimerRemaining for Timer {
+    fn remaining_seconds(&self) -> f32 {
+        (self.duration() - self.elapsed()).as_secs_f32()
+    }
+}
 
 #[derive(RandGen, EnumIter, Display, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CombatType {
@@ -31,7 +41,7 @@ pub enum Unit {
     ParkedPreparing(Timer, Token<ParkingSpace>, CombatType),
     ParkedReady(Token<ParkingSpace>, CombatType),
     Patrolling(Timer, CombatType),
-    Returning(Timer),
+    Returning(Timer, CombatType),
     WaitingToPark,
 }
 
@@ -52,7 +62,7 @@ impl Unit {
                     self.try_to_park(parking_spaces);
                 }
             }
-            Self::Returning(timer) => {
+            Self::Returning(timer, _) => {
                 timer.tick(time.delta());
 
                 if timer.finished() {
@@ -98,53 +108,7 @@ impl Unit {
                     }
                 });
             }
-            Unit::UnMothballing(timer, _) => {
-                ui.label(format!(
-                    "UnMothballing. {:.0} / {:.1} seconds to go.",
-                    timer.percent() * 100.0,
-                    (timer.duration() - timer.elapsed()).as_secs_f64()
-                ));
-            }
-            Unit::ParkedUnready(parking_space) => {
-                let mut selected_combat_type = None;
-                ui.horizontal(|ui| {
-                    ui.label("Unready");
-                    ui.group(|ui| {
-                        ui.label("Preparations");
-                        for combat_type in CombatType::iter() {
-                            if ui.button(combat_type.to_string()).clicked() {
-                                selected_combat_type = Some(combat_type);
-                            }
-                        }
-                    })
-                });
 
-                if let Some(combat_type) = selected_combat_type {
-                    *self = Self::ParkedPreparing(
-                        Timer::from_seconds(5.0, false),
-                        parking_space.clone(),
-                        combat_type,
-                    )
-                }
-            }
-            Unit::ParkedPreparing(timer, _, combat_type) => {
-                ui.label(format!(
-                    "Preparing combat type {}. {:.0} / {:.1} seconds to go.",
-                    combat_type,
-                    timer.percent() * 100.0,
-                    (timer.duration() - timer.elapsed()).as_secs_f64()
-                ));
-            }
-            Unit::ParkedReady(_, combat_type) => {
-                let take_off_clicked = ui.horizontal(|ui| {
-                    ui.label(format!("Ready for combat type {}.", combat_type));
-                    ui.button("Take off!").clicked()
-                });
-
-                if take_off_clicked.inner {
-                    *self = Self::Patrolling(Timer::from_seconds(30.0, false), *combat_type);
-                }
-            }
             Unit::Patrolling(timer, combat_type) => {
                 ui.label(format!(
                     "Patrolling combat type {}. Time remaining: {:.1}s",
@@ -152,15 +116,14 @@ impl Unit {
                     (timer.duration() - timer.elapsed()).as_secs_f64()
                 ));
             }
-            Unit::Returning(timer) => {
+            Unit::Returning(timer, _) => {
                 ui.label(format!(
                     "Returning. Time remaining: {:.1}s",
                     (timer.duration() - timer.elapsed()).as_secs_f64()
                 ));
             }
-            Unit::WaitingToPark => {
-                ui.label("Waiting for parking space.");
-            }
+
+            _ => {}
         };
     }
 
@@ -172,10 +135,40 @@ impl Unit {
     }
 
     fn return_to_base(&mut self) {
-        if let Self::Patrolling(timer, _) = self {
-            *self = Self::Returning(timer.clone());
+        if let Self::Patrolling(timer, combat_type) = self {
+            *self = Self::Returning(timer.clone(), *combat_type);
         } else {
             panic!("Invalid state for returning to base.");
+        }
+    }
+
+    fn unmothball(&mut self, parking_spaces: &mut TokenPool<ParkingSpace>) {
+        if let Self::Mothballed = self {
+            let parking_space = parking_spaces.try_take().unwrap();
+
+            *self = Self::UnMothballing(Timer::from_seconds(10.0, false), parking_space);
+        } else {
+            panic!("Invalid state for unmothballing.")
+        }
+    }
+
+    fn prepare(&mut self, combat_type: CombatType) {
+        if let Self::ParkedUnready(parking_space) = self {
+            *self = Self::ParkedPreparing(
+                Timer::from_seconds(5.0, false),
+                parking_space.clone(),
+                combat_type,
+            )
+        } else {
+            panic!("Invalid state for preparing")
+        }
+    }
+
+    fn take_off(&mut self) {
+        if let Self::ParkedReady(parking_space, combat_type) = self {
+            *self = Self::Patrolling(Timer::from_seconds(30.0, false), *combat_type);
+        } else {
+            panic!("Invalid state for taking off")
         }
     }
 }
@@ -301,6 +294,10 @@ impl<T> TokenPool<T> {
     pub fn can_take(&self) -> bool {
         Arc::strong_count(&self.token_holder) < self.max_count + 1
     }
+
+    pub fn slots_used(&self) -> usize {
+        Arc::strong_count(&self.token_holder) - 1
+    }
 }
 
 pub fn gui(
@@ -356,140 +353,149 @@ pub fn gui(
         ui.heading("Your Base");
         ui.separator();
         ui.heading("Mothballed units");
-        ui.horizontal(|ui| {
-            ui.label("Unit");
-            ui.button("UnMothball");
-        });
-        ui.horizontal(|ui| {
-            ui.label("Unit");
-            ui.button("UnMothball");
-        });
-        ui.horizontal(|ui| {
-            ui.label("Unit");
-            ui.button("UnMothball");
-        });
+
+        for mut unit in units.iter_mut() {
+            match &*unit {
+                Unit::Mothballed => {
+                    ui.horizontal(|ui| {
+                        ui.label("Unit");
+                        if !parking_spaces.can_take() {
+                            ui.set_enabled(false);
+                        }
+
+                        if ui.button("UnMothball").clicked() {
+                            unit.unmothball(&mut parking_spaces);
+                        }
+                    });
+                }
+                Unit::UnMothballing(timer, _) => {
+                    ui.label(format!(
+                        "UnMothballing. {:.0} / {:.1} seconds to go.",
+                        timer.percent() * 100.0,
+                        (timer.duration() - timer.elapsed()).as_secs_f64()
+                    ));
+                }
+                _ => {}
+            }
+        }
         ui.separator();
-        ui.heading("Parking Area (2/2 spaces used)");
-        ui.horizontal(|ui| {
-            ui.label("Unit - Unready");
-            ui.button("A");
-            ui.button("B");
-            ui.button("C");
-            ui.button("D");
-        });
-        ui.horizontal(|ui| {
-            ui.label("Unit - Ready for B");
-            ui.button("Launch")
-        });
+        ui.heading(format!(
+            "Parking Area ({}/{} spaces used)",
+            parking_spaces.slots_used(),
+            parking_spaces.max_count
+        ));
+        for mut unit in units.iter_mut() {
+            match &*unit {
+                Unit::ParkedUnready(parking_space) => {
+                    let mut selected_combat_type = None;
+                    ui.horizontal(|ui| {
+                        ui.label("Unready");
+                        ui.group(|ui| {
+                            ui.label("Preparations");
+                            for combat_type in CombatType::iter() {
+                                if ui.button(combat_type.to_string()).clicked() {
+                                    selected_combat_type = Some(combat_type);
+                                }
+                            }
+                        })
+                    });
+
+                    if let Some(combat_type) = selected_combat_type {
+                        unit.prepare(combat_type);
+                    }
+                }
+                Unit::ParkedPreparing(timer, _, combat_type) => {
+                    ui.label(format!(
+                        "Preparing combat type {}. {:.0} / {:.1} seconds to go.",
+                        combat_type,
+                        timer.percent() * 100.0,
+                        (timer.duration() - timer.elapsed()).as_secs_f64()
+                    ));
+                }
+                Unit::ParkedReady(_, combat_type) => {
+                    let take_off_clicked = ui.horizontal(|ui| {
+                        ui.label(format!("Ready for combat type {}.", combat_type));
+                        ui.button("Take off!").clicked()
+                    });
+
+                    if take_off_clicked.inner {
+                        unit.take_off();
+                    }
+                }
+                _ => {}
+            }
+        }
         ui.separator();
         ui.heading("Queuing for parking");
-        ui.label("Unit");
-        ui.label("Unit");
+        for unit in units.iter_mut() {
+            match &*unit {
+                Unit::WaitingToPark => {
+                    ui.label("Unit");
+                }
+                _ => {}
+            }
+        }
         ui.separator();
         ui.separator();
 
         ui.heading("The Battlezone");
         ui.separator();
-        ui.horizontal(|ui| {
-            ui.heading("A");
+
+        for combat_type in CombatType::iter() {
+            let enemies = enemies
+                .iter_mut()
+                .filter(|enemy| enemy.combat_type == combat_type);
+
+            ui.horizontal(|ui| {
+                ui.heading(combat_type.to_string());
+                ui.separator();
+                let (response, painter) = ui
+                    .allocate_painter(ui.available_size_before_wrap_finite(), egui::Sense::hover());
+                let rect = response.rect;
+                let y = 0.5 * rect.height() + rect.top();
+
+                for enemy in enemies {
+                    let x = rect.left() + rect.width() * enemy.progress.percent_left();
+                    painter.text(
+                        Pos2 { x, y },
+                        Align2([Align::Min, Align::Center]),
+                        format!("◀ {:.1}s", enemy.progress.remaining_seconds()),
+                        TextStyle::Heading,
+                        Color32::RED,
+                    );
+                }
+
+                for unit in units.iter_mut() {
+                    match &*unit {
+                        Unit::Patrolling(progress, unit_combat_type)
+                            if *unit_combat_type == combat_type =>
+                        {
+                            let x = rect.left() + rect.width() * progress.percent();
+                            painter.text(
+                                Pos2 { x, y },
+                                Align2([Align::Max, Align::Center]),
+                                "▶",
+                                TextStyle::Heading,
+                                Color32::GREEN,
+                            );
+                        }
+                        Unit::Returning(progress, unit_combat_type)
+                            if *unit_combat_type == combat_type =>
+                        {
+                            let x = rect.left() + rect.width() * progress.percent();
+                            painter.text(
+                                Pos2 { x, y },
+                                Align2([Align::Max, Align::Center]),
+                                "▶",
+                                TextStyle::Heading,
+                                Color32::GOLD,
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+            });
             ui.separator();
-            let (response, painter) =
-                ui.allocate_painter(ui.available_size_before_wrap_finite(), egui::Sense::hover());
-            let rect = response.rect;
-
-            let x = 0.2 * rect.width() + rect.left();
-            let y = 0.5 * rect.height() + rect.top();
-
-            let pos = Pos2 { x, y };
-            painter.text(
-                pos,
-                Align2([Align::Center, Align::Center]),
-                "▶",
-                TextStyle::Heading,
-                Color32::GREEN,
-            );
-
-            let x = 0.3 * rect.width() + rect.left();
-
-            let pos = Pos2 { x, y };
-            painter.text(
-                pos,
-                Align2([Align::Center, Align::Center]),
-                "◀ 9.7s",
-                TextStyle::Heading,
-                Color32::RED,
-            );
-
-            let x = 0.85 * rect.width() + rect.left();
-
-            let pos = Pos2 { x, y };
-            painter.text(
-                pos,
-                Align2([Align::Center, Align::Center]),
-                "▶",
-                TextStyle::Heading,
-                Color32::GOLD,
-            );
-        });
-        ui.separator();
-        ui.horizontal(|ui| {
-            ui.heading("B");
-            ui.separator();
-            let (response, painter) =
-                ui.allocate_painter(ui.available_size_before_wrap_finite(), egui::Sense::hover());
-            let rect = response.rect;
-
-            let x = 0.2 * rect.width() + rect.left();
-            let y = 0.5 * rect.height() + rect.top();
-
-            let pos = Pos2 { x, y };
-            painter.text(
-                pos,
-                Align2([Align::Center, Align::Center]),
-                "▶",
-                TextStyle::Heading,
-                Color32::GREEN,
-            );
-        });
-        ui.separator();
-        ui.horizontal(|ui| {
-            ui.heading("C");
-            ui.separator();
-            let (response, painter) =
-                ui.allocate_painter(ui.available_size_before_wrap_finite(), egui::Sense::hover());
-            let rect = response.rect;
-
-            let x = 0.2 * rect.width() + rect.left();
-            let y = 0.5 * rect.height() + rect.top();
-
-            let pos = Pos2 { x, y };
-            painter.text(
-                pos,
-                Align2([Align::Center, Align::Center]),
-                "▶",
-                TextStyle::Heading,
-                Color32::GREEN,
-            );
-        });
-        ui.separator();
-        ui.horizontal(|ui| {
-            ui.heading("D");
-            ui.separator();
-            let (response, painter) =
-                ui.allocate_painter(ui.available_size_before_wrap_finite(), egui::Sense::hover());
-            let rect = response.rect;
-
-            let x = 0.2 * rect.width() + rect.left();
-            let y = 0.5 * rect.height() + rect.top();
-
-            let pos = Pos2 { x, y };
-            painter.text(
-                pos,
-                Align2([Align::Center, Align::Center]),
-                "▶",
-                TextStyle::Heading,
-                Color32::GREEN,
-            );
-        });
+        }
     });
 }
