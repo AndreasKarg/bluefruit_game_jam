@@ -1,8 +1,16 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::{cmp::Ordering, marker::PhantomData, mem::discriminant, sync::Arc};
 
 use engine::{
-    bevy::{prelude::*, utils::Duration},
-    bevy_egui::{egui, egui::Ui, EguiContext},
+    bevy::{
+        ecs::prelude::Entity,
+        prelude::{AssetServer, Commands, Query, Res, ResMut, Time, Timer},
+        utils::Duration,
+    },
+    bevy_egui::{
+        egui,
+        egui::{Align, Align2, Color32, Grid, Pos2, TextStyle, Ui},
+        EguiContext,
+    },
 };
 use rand_derive2::RandGen;
 use strum::{Display, EnumIter, IntoEnumIterator};
@@ -343,9 +351,166 @@ pub fn gui(
         egui::warn_if_debug_build(ui);
 
         ui.separator();
+        ui.separator();
 
-        ui.heading("Central Panel");
-        ui.label("The central panel the region left after adding TopPanel's and SidePanel's");
-        ui.label("It is often a great place for big things, like drawings:");
+        ui.heading("Your Base");
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.heading("Mothballed units");
+                ui.horizontal(|ui| {
+                    ui.label("Unit");
+                    ui.button("UnMothball")
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Unit");
+                    ui.button("UnMothball")
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Unit");
+                    ui.button("UnMothball")
+                });
+            });
+            ui.separator();
+            ui.vertical(|ui| {
+                ui.heading("Parked units");
+                ui.horizontal(|ui| {
+                    ui.label("Unit");
+                    ui.button("A");
+                    ui.button("B");
+                    ui.button("C");
+                    ui.button("D");
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Unit");
+                    ui.button("A");
+                    ui.button("B");
+                    ui.button("C");
+                    ui.button("D");
+                });
+            });
+            ui.separator();
+            ui.vertical(|ui| {
+                ui.heading("Ready");
+                ui.horizontal(|ui| {
+                    ui.label("Unit, ready for A");
+                    ui.button("Launch")
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Unit, ready for B");
+                    ui.button("Launch")
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Unit, ready for C");
+                    ui.button("Launch")
+                });
+            });
+        });
+        ui.separator();
+        ui.separator();
+
+        ui.heading("The Battlezone");
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.heading("A");
+            ui.separator();
+            let (response, painter) =
+                ui.allocate_painter(ui.available_size_before_wrap_finite(), egui::Sense::hover());
+            let rect = response.rect;
+
+            let x = 0.2 * rect.width() + rect.left();
+            let y = 0.5 * rect.height() + rect.top();
+
+            let pos = Pos2 { x, y };
+            painter.text(
+                pos,
+                Align2([Align::Center, Align::Center]),
+                "▶",
+                TextStyle::Heading,
+                Color32::GREEN,
+            );
+
+            let x = 0.3 * rect.width() + rect.left();
+
+            let pos = Pos2 { x, y };
+            painter.text(
+                pos,
+                Align2([Align::Center, Align::Center]),
+                "◀",
+                TextStyle::Heading,
+                Color32::RED,
+            );
+
+            let x = 0.85 * rect.width() + rect.left();
+
+            let pos = Pos2 { x, y };
+            painter.text(
+                pos,
+                Align2([Align::Center, Align::Center]),
+                "▶",
+                TextStyle::Heading,
+                Color32::GOLD,
+            );
+        });
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.heading("B");
+            ui.separator();
+            let (response, painter) =
+                ui.allocate_painter(ui.available_size_before_wrap_finite(), egui::Sense::hover());
+            let rect = response.rect;
+
+            let x = 0.2 * rect.width() + rect.left();
+            let y = 0.5 * rect.height() + rect.top();
+
+            let pos = Pos2 { x, y };
+            painter.text(
+                pos,
+                Align2([Align::Center, Align::Center]),
+                "▶",
+                TextStyle::Heading,
+                Color32::GREEN,
+            );
+        });
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.heading("C");
+            ui.separator();
+            let (response, painter) =
+                ui.allocate_painter(ui.available_size_before_wrap_finite(), egui::Sense::hover());
+            let rect = response.rect;
+
+            let x = 0.2 * rect.width() + rect.left();
+            let y = 0.5 * rect.height() + rect.top();
+
+            let pos = Pos2 { x, y };
+            painter.text(
+                pos,
+                Align2([Align::Center, Align::Center]),
+                "▶",
+                TextStyle::Heading,
+                Color32::GREEN,
+            );
+        });
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.heading("D");
+            ui.separator();
+            let (response, painter) =
+                ui.allocate_painter(ui.available_size_before_wrap_finite(), egui::Sense::hover());
+            let rect = response.rect;
+
+            let x = 0.2 * rect.width() + rect.left();
+            let y = 0.5 * rect.height() + rect.top();
+
+            let pos = Pos2 { x, y };
+            painter.text(
+                pos,
+                Align2([Align::Center, Align::Center]),
+                "▶",
+                TextStyle::Heading,
+                Color32::GREEN,
+            );
+        });
     });
 }
