@@ -1,93 +1,55 @@
 use engine::{
     bevy::prelude::*,
-    bevy_egui::{egui, EguiContext},
+    bevy_egui::{egui, egui::Ui, EguiContext},
 };
 
-#[derive(Debug)]
-pub struct BadThing(i32);
-pub struct GoodThing(i32);
+#[derive(Debug, Copy, Clone)]
+pub enum Unit {
+    Unready,
+    Ready,
+}
+
+impl Unit {
+    fn draw_in_unit_list(&mut self, ui: &mut Ui) {
+        let mut new_state = *self;
+        match self {
+            Unit::Unready => {
+                ui.horizontal(|ui| {
+                    ui.label("Unready");
+                    if ui.button("Prepare").clicked() {
+                        new_state = Self::Ready
+                    }
+                });
+            }
+            Unit::Ready => {
+                ui.label("Ready");
+            }
+        };
+
+        *self = new_state;
+    }
+}
+
+pub enum Enemy {}
 
 pub fn init_stuff(mut commands: Commands) {
-    commands.spawn().insert(BadThing(1));
-    commands.spawn().insert(BadThing(2));
-    commands.spawn().insert(BadThing(3));
+    commands.spawn().insert(Unit::Unready);
+    commands.spawn().insert(Unit::Unready);
+    commands.spawn().insert(Unit::Unready);
 }
 
-#[derive(Default)]
-pub struct UiState {
-    label: String,
-    value: f32,
-    painting: Painting,
-    inverted: bool,
-}
-
-const BEVY_TEXTURE_ID: u64 = 0;
-
-pub fn ui_example(
+pub fn gui(
     mut commands: Commands,
     mut egui_ctx: ResMut<EguiContext>,
-    mut ui_state: ResMut<UiState>,
-    assets: Res<AssetServer>,
-    bad_things: Query<(Entity, &BadThing)>,
-    good_things: Query<(Entity, &GoodThing)>,
+    _assets: Res<AssetServer>,
+    mut units: Query<(Entity, &mut Unit)>,
+    enemies: Query<(Entity, &Enemy)>,
 ) {
-    let mut load = false;
-    let mut remove = false;
-    let mut invert = false;
-
     egui::SidePanel::left("side_panel", 200.0).show(egui_ctx.ctx(), |ui| {
-        ui.heading("Side Panel");
-
-        ui.horizontal(|ui| {
-            ui.label("Write something: ");
-            ui.text_edit_singleline(&mut ui_state.label);
-        });
-
-        ui.add(egui::Slider::new(&mut ui_state.value, 0.0..=10.0).text("value"));
-        if ui.button("Increment").clicked() {
-            ui_state.value += 1.0;
+        ui.heading("Units");
+        for (unit_entity, mut unit) in units.iter_mut() {
+            unit.draw_in_unit_list(ui);
         }
-
-        ui.allocate_space(egui::Vec2::new(1.0, 100.0));
-        ui.horizontal(|ui| {
-            load = ui.button("Load").clicked();
-            invert = ui.button("Invert").clicked();
-            remove = ui.button("Remove").clicked();
-        });
-
-        ui.add(egui::widgets::Image::new(
-            egui::TextureId::User(BEVY_TEXTURE_ID),
-            [256.0, 256.0],
-        ));
-
-        ui.label("Bad things start here.");
-        for (bad_thing_entity, bad_thing) in bad_things.iter() {
-            ui.label(format!("Bad thing #{}", bad_thing.0));
-            if ui.button("Make good!").clicked() {
-                let idx = bad_thing.0;
-                let bad_thing_owned = commands
-                    .entity(bad_thing_entity)
-                    .remove::<BadThing>()
-                    .insert(GoodThing(idx));
-            }
-        }
-        ui.label("Bad things end here.");
-        ui.label("Good things start here.");
-        for (good_thing_entity, good_thing) in good_things.iter() {
-            ui.label(format!("Good thing #{}", good_thing.0));
-            if ui.button("Make bad!").clicked() {
-                let idx = good_thing.0;
-                let bad_thing_owned = commands
-                    .entity(good_thing_entity)
-                    .remove::<GoodThing>()
-                    .insert(BadThing(idx));
-            }
-        }
-        ui.label("Good things end here.");
-
-        ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
-            ui.add(egui::Hyperlink::new("https://github.com/emilk/egui/").text("powered by egui"));
-        });
     });
 
     egui::TopPanel::top("top_panel").show(egui_ctx.ctx(), |ui| {
@@ -102,12 +64,7 @@ pub fn ui_example(
     });
 
     egui::CentralPanel::default().show(egui_ctx.ctx(), |ui| {
-        ui.heading("Egui Template");
-        ui.hyperlink("https://github.com/emilk/egui_template");
-        ui.add(egui::github_link_file_line!(
-            "https://github.com/emilk/egui_template/blob/master/",
-            "Direct link to source code."
-        ));
+        ui.heading("Hier könnte Ihre Werbung stehen!");
         egui::warn_if_debug_build(ui);
 
         ui.separator();
@@ -115,90 +72,5 @@ pub fn ui_example(
         ui.heading("Central Panel");
         ui.label("The central panel the region left after adding TopPanel's and SidePanel's");
         ui.label("It is often a great place for big things, like drawings:");
-
-        ui.heading("Draw with your mouse to paint:");
-        ui_state.painting.ui_control(ui);
-        egui::Frame::dark_canvas(ui.style()).show(ui, |ui| {
-            ui_state.painting.ui_content(ui);
-        });
     });
-
-    egui::Window::new("Window")
-        .scroll(true)
-        .show(egui_ctx.ctx(), |ui| {
-            ui.label("Windows can be moved by dragging them.");
-            ui.label("They are automatically sized based on contents.");
-            ui.label("You can turn on resizing and scrolling if you like.");
-            ui.label("You would normally chose either panels OR windows.");
-        });
-
-    if invert {
-        ui_state.inverted = !ui_state.inverted;
-    }
-    if load || invert {
-        let texture_handle = if ui_state.inverted {
-            assets.load("icon_inverted.png")
-        } else {
-            assets.load("icon.png")
-        };
-        egui_ctx.set_egui_texture(BEVY_TEXTURE_ID, texture_handle);
-    }
-    if remove {
-        egui_ctx.remove_egui_texture(BEVY_TEXTURE_ID);
-    }
-}
-
-struct Painting {
-    lines: Vec<Vec<egui::Vec2>>,
-    stroke: egui::Stroke,
-}
-
-impl Default for Painting {
-    fn default() -> Self {
-        Self {
-            lines: Default::default(),
-            stroke: egui::Stroke::new(1.0, egui::Color32::LIGHT_BLUE),
-        }
-    }
-}
-
-impl Painting {
-    pub fn ui_control(&mut self, ui: &mut egui::Ui) -> egui::Response {
-        ui.horizontal(|ui| {
-            egui::stroke_ui(ui, &mut self.stroke, "Stroke");
-            ui.separator();
-            if ui.button("Clear Painting").clicked() {
-                self.lines.clear();
-            }
-        })
-        .response
-    }
-
-    pub fn ui_content(&mut self, ui: &mut egui::Ui) {
-        let (response, painter) =
-            ui.allocate_painter(ui.available_size_before_wrap_finite(), egui::Sense::drag());
-        let rect = response.rect;
-
-        if self.lines.is_empty() {
-            self.lines.push(vec![]);
-        }
-
-        let current_line = self.lines.last_mut().unwrap();
-
-        if let Some(pointer_pos) = response.interact_pointer_pos() {
-            let canvas_pos = pointer_pos - rect.min;
-            if current_line.last() != Some(&canvas_pos) {
-                current_line.push(canvas_pos);
-            }
-        } else if !current_line.is_empty() {
-            self.lines.push(vec![]);
-        }
-
-        for line in &self.lines {
-            if line.len() >= 2 {
-                let points: Vec<egui::Pos2> = line.iter().map(|p| rect.min + *p).collect();
-                painter.add(egui::Shape::line(points, self.stroke));
-            }
-        }
-    }
 }
