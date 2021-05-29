@@ -5,9 +5,11 @@ use engine::{
 
 #[derive(Debug, Clone)]
 pub enum Unit {
-    Unready,
-    Preparing(Timer),
-    Ready,
+    Mothballed,
+    UnMothballing(Timer),
+    ParkedUnready,
+    ParkedPreparing(Timer),
+    ParkedReady,
     Patrolling(Timer),
     Returning(Timer),
 }
@@ -15,25 +17,32 @@ pub enum Unit {
 impl Unit {
     fn tick(&mut self, time: &Time) {
         match self {
-            Self::Preparing(timer) => {
+            Self::ParkedPreparing(timer) => {
                 timer.tick(time.delta());
 
                 if timer.finished() {
-                    *self = Self::Ready;
+                    *self = Self::ParkedReady;
                 }
             }
             Self::Patrolling(timer) => {
                 timer.tick(time.delta());
 
                 if timer.finished() {
-                    *self = Self::Unready;
+                    *self = Self::ParkedUnready;
                 }
             }
             Self::Returning(timer) => {
                 timer.tick(time.delta());
 
                 if timer.finished() {
-                    *self = Self::Unready;
+                    *self = Self::ParkedUnready;
+                }
+            }
+            Self::UnMothballing(timer) => {
+                timer.tick(time.delta());
+
+                if timer.finished() {
+                    *self = Self::ParkedUnready;
                 }
             }
             _ => {}
@@ -42,22 +51,35 @@ impl Unit {
 
     fn draw_in_unit_list(&mut self, ui: &mut Ui) {
         match self {
-            Unit::Unready => {
+            Unit::Mothballed => {
+                ui.label("Mothballed");
+                if ui.button("UnMothball").clicked() {
+                    *self = Self::UnMothballing(Timer::from_seconds(10.0, false))
+                }
+            }
+            Unit::UnMothballing(timer) => {
+                ui.label(format!(
+                    "UnMothballing. {:.0} / {:.1} seconds to go.",
+                    timer.percent() * 100.0,
+                    (timer.duration() - timer.elapsed()).as_secs_f64()
+                ));
+            }
+            Unit::ParkedUnready => {
                 ui.horizontal(|ui| {
                     ui.label("Unready");
                     if ui.button("Prepare").clicked() {
-                        *self = Self::Preparing(Timer::from_seconds(5.0, false))
+                        *self = Self::ParkedPreparing(Timer::from_seconds(5.0, false))
                     }
                 });
             }
-            Unit::Preparing(timer) => {
+            Unit::ParkedPreparing(timer) => {
                 ui.label(format!(
                     "Preparing. {:.0} / {:.1} seconds to go.",
                     timer.percent() * 100.0,
                     (timer.duration() - timer.elapsed()).as_secs_f64()
                 ));
             }
-            Unit::Ready => {
+            Unit::ParkedReady => {
                 ui.horizontal(|ui| {
                     ui.label("Ready");
                     if ui.button("Take off!").clicked() {
@@ -128,9 +150,9 @@ impl Enemy {
 }
 
 pub fn init_stuff(mut commands: Commands) {
-    commands.spawn().insert(Unit::Unready);
-    commands.spawn().insert(Unit::Unready);
-    commands.spawn().insert(Unit::Unready);
+    commands.spawn().insert(Unit::Mothballed);
+    commands.spawn().insert(Unit::Mothballed);
+    commands.spawn().insert(Unit::Mothballed);
     commands
         .spawn()
         .insert(Enemy::new(Duration::from_secs_f64(20.0)));
