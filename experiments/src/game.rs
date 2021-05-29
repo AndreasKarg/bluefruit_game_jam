@@ -355,57 +355,36 @@ pub fn gui(
 
         ui.heading("Your Base");
         ui.separator();
+        ui.heading("Mothballed units");
         ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.heading("Mothballed units");
-                ui.horizontal(|ui| {
-                    ui.label("Unit");
-                    ui.button("UnMothball")
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Unit");
-                    ui.button("UnMothball")
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Unit");
-                    ui.button("UnMothball")
-                });
-            });
-            ui.separator();
-            ui.vertical(|ui| {
-                ui.heading("Parked units");
-                ui.horizontal(|ui| {
-                    ui.label("Unit");
-                    ui.button("A");
-                    ui.button("B");
-                    ui.button("C");
-                    ui.button("D");
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Unit");
-                    ui.button("A");
-                    ui.button("B");
-                    ui.button("C");
-                    ui.button("D");
-                });
-            });
-            ui.separator();
-            ui.vertical(|ui| {
-                ui.heading("Ready");
-                ui.horizontal(|ui| {
-                    ui.label("Unit, ready for A");
-                    ui.button("Launch")
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Unit, ready for B");
-                    ui.button("Launch")
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Unit, ready for C");
-                    ui.button("Launch")
-                });
-            });
+            ui.label("Unit");
+            ui.button("UnMothball");
         });
+        ui.horizontal(|ui| {
+            ui.label("Unit");
+            ui.button("UnMothball");
+        });
+        ui.horizontal(|ui| {
+            ui.label("Unit");
+            ui.button("UnMothball");
+        });
+        ui.separator();
+        ui.heading("Parking Area (2/2 spaces used)");
+        ui.horizontal(|ui| {
+            ui.label("Unit - Unready");
+            ui.button("A");
+            ui.button("B");
+            ui.button("C");
+            ui.button("D");
+        });
+        ui.horizontal(|ui| {
+            ui.label("Unit - Ready for B");
+            ui.button("Launch")
+        });
+        ui.separator();
+        ui.heading("Queuing for parking");
+        ui.label("Unit");
+        ui.label("Unit");
         ui.separator();
         ui.separator();
 
@@ -436,7 +415,7 @@ pub fn gui(
             painter.text(
                 pos,
                 Align2([Align::Center, Align::Center]),
-                "◀",
+                "◀ 9.7s",
                 TextStyle::Heading,
                 Color32::RED,
             );
