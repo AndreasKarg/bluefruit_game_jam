@@ -40,14 +40,15 @@ pub enum CombatType {
 
 #[derive(Debug, Clone)]
 pub enum Unit {
-    Mothballed,
-    UnMothballing(Timer, Token<ParkingSpace>),
+    InStorage,
+    UnStoring(Timer, Token<ParkingSpace>),
     ParkedUnready(Token<ParkingSpace>),
     ParkedPreparing(Timer, Token<ParkingSpace>, CombatType),
     ParkedReady(Token<ParkingSpace>, CombatType),
     Patrolling(Timer, CombatType),
     Returning(Timer, CombatType),
     WaitingToPark,
+    Storing(Timer),
 }
 
 impl Unit {
@@ -74,7 +75,7 @@ impl Unit {
                     self.try_to_park(parking_spaces);
                 }
             }
-            Self::UnMothballing(timer, parking_space) => {
+            Self::UnStoring(timer, parking_space) => {
                 timer.tick(time.delta());
 
                 if timer.finished() {
@@ -84,7 +85,16 @@ impl Unit {
             Self::WaitingToPark => {
                 self.try_to_park(parking_spaces);
             }
-            _ => {}
+            Unit::Storing(timer) => {
+                timer.tick(time.delta());
+
+                if timer.finished() {
+                    *self = Self::InStorage;
+                }
+            }
+            Unit::InStorage => {}
+            Unit::ParkedUnready(_) => {}
+            Unit::ParkedReady(_, _) => {}
         }
     }
 
@@ -111,11 +121,11 @@ impl Unit {
         }
     }
 
-    fn unmothball(&mut self, parking_spaces: &mut TokenPool<ParkingSpace>) {
-        if let Self::Mothballed = self {
+    fn un_store(&mut self, parking_spaces: &mut TokenPool<ParkingSpace>) {
+        if let Self::InStorage = self {
             let parking_space = parking_spaces.try_take().unwrap();
 
-            *self = Self::UnMothballing(Timer::from_seconds(10.0, false), parking_space);
+            *self = Self::UnStoring(Timer::from_seconds(10.0, false), parking_space);
         } else {
             panic!("Invalid state for unmothballing.")
         }
@@ -139,6 +149,20 @@ impl Unit {
         } else {
             panic!("Invalid state for taking off")
         }
+    }
+
+    fn move_into_storage(&mut self) {
+        match self {
+            Unit::ParkedUnready(_) => {}
+            Unit::ParkedPreparing(_, _, _) => {}
+            Unit::ParkedReady(_, _) => {}
+            Unit::WaitingToPark => {}
+            _ => {
+                panic!("Invalid state for moving to storage!")
+            }
+        }
+
+        *self = Self::Storing(Timer::from_seconds(10.0, false));
     }
 }
 
@@ -169,9 +193,9 @@ impl Enemy {
 }
 
 pub fn init_stuff(mut commands: Commands) {
-    commands.spawn().insert(Unit::Mothballed);
-    commands.spawn().insert(Unit::Mothballed);
-    commands.spawn().insert(Unit::Mothballed);
+    commands.spawn().insert(Unit::InStorage);
+    commands.spawn().insert(Unit::InStorage);
+    commands.spawn().insert(Unit::InStorage);
 }
 
 pub fn units_meet_enemies(
@@ -327,21 +351,28 @@ pub fn gui(
 
         ui.heading("Your Base");
         ui.separator();
-        ui.heading("Mothballed units");
+        ui.heading("Stored Units");
 
         for mut unit in units.iter_mut() {
             match &*unit {
-                Unit::Mothballed => {
+                Unit::InStorage => {
                     ui.horizontal(|ui| {
                         ui.label("Unit");
                         if !parking_spaces.can_take() {
                             ui.set_enabled(false);
                         }
 
-                        if ui.button("UnMothball").clicked() {
-                            unit.unmothball(&mut parking_spaces);
+                        if ui.button("Bring out of storage").clicked() {
+                            unit.un_store(&mut parking_spaces);
                         }
                     });
+                }
+                Unit::Storing(timer) => {
+                    ui.label(format!(
+                        "Moving into Storage. {:.0}% / {:.1} seconds to go.",
+                        timer.percent() * 100.0,
+                        (timer.duration() - timer.elapsed()).as_secs_f64()
+                    ));
                 }
                 _ => {}
             }
@@ -354,15 +385,16 @@ pub fn gui(
         ));
         for mut unit in units.iter_mut() {
             match &*unit {
-                Unit::UnMothballing(timer, _) => {
+                Unit::UnStoring(timer, _) => {
                     ui.label(format!(
-                        "UnMothballing. {:.0} / {:.1} seconds to go.",
+                        "Coming out of storage. {:.0}% / {:.1} seconds to go.",
                         timer.percent() * 100.0,
                         (timer.duration() - timer.elapsed()).as_secs_f64()
                     ));
                 }
                 Unit::ParkedUnready(parking_space) => {
                     let mut selected_combat_type = None;
+                    let mut storage_requested = false;
                     ui.horizontal(|ui| {
                         ui.label("Unready");
                         ui.group(|ui| {
@@ -372,16 +404,19 @@ pub fn gui(
                                     selected_combat_type = Some(combat_type);
                                 }
                             }
+                            storage_requested = ui.button("Move into storage").clicked();
                         })
                     });
 
                     if let Some(combat_type) = selected_combat_type {
                         unit.prepare(combat_type);
+                    } else if storage_requested {
+                        unit.move_into_storage();
                     }
                 }
                 Unit::ParkedPreparing(timer, _, combat_type) => {
                     ui.label(format!(
-                        "Preparing combat type {}. {:.0} / {:.1} seconds to go.",
+                        "Preparing combat type {}. {:.0}% / {:.1} seconds to go.",
                         combat_type,
                         timer.percent() * 100.0,
                         (timer.duration() - timer.elapsed()).as_secs_f64()
