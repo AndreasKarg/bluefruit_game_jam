@@ -403,7 +403,18 @@ pub fn gui(
     });
 
     egui::CentralPanel::default().show(egui_ctx.ctx(), |ui| {
-        ui.heading("Hier könnte Ihre Werbung stehen!");
+        ui.heading(format!(
+            "You have survived for {:.0} seconds so far!",
+            time.time_since_startup().as_secs_f64()
+        ));
+        ui.label("Ze evil people from ze Meatropolis wiz zeir Queen on zat island in ze sea are \
+            invading our great country of Fruitopia! \
+            
+            Zey vant to cut down our precious orchards to make ze trees into zeir wretched sawdust sausages!\n\
+            Ze Kaiser has ordered YOU to run ze main defense operation agenst ze Meatropolitans. \
+            Zey are stronk and REALLY vant zose orchards. Zey vill come faster and faster.\n\
+            
+            Hold zem off for as long as you can and ve vill propose you for ze Eiserne Pflaume medal!");
         egui::warn_if_debug_build(ui);
 
         ui.separator();
@@ -412,6 +423,7 @@ pub fn gui(
         ui.heading("Your Base");
         ui.separator();
         ui.heading("Stored Units");
+        ui.label("Repair damaged units here.");
 
         for (mut unit, health) in units.iter_mut() {
             match &*unit {
@@ -444,6 +456,7 @@ pub fn gui(
             parking_spaces.slots_used(),
             parking_spaces.max_count
         ));
+        ui.label("Prepare your units for battle in one of the lanes and send them off to fight here!");
         for (mut unit, health) in units.iter_mut() {
             match &*unit {
                 Unit::UnStoring(timer, _) => {
@@ -511,6 +524,7 @@ pub fn gui(
         }
         ui.separator();
         ui.heading("Queuing for parking");
+        ui.label("Units here are just standing around when they could be fighting or getting repaired! Move them on as quickly as you can!");
         for (mut unit, health) in units.iter_mut() {
             match &*unit {
                 Unit::WaitingToPark => {
@@ -535,6 +549,9 @@ pub fn gui(
         ui.separator();
 
         ui.heading("The Battlezone");
+        ui.label("Enemies (red) approach from the right on different lanes. Prepare your units for the\
+        right type of lane and send them off to fight. Each unit (green) can fend off a single enemy before it returns to base (amber).\
+        Your units will wear out with use. Remember to repair them!");
         ui.separator();
 
         for combat_type in CombatType::iter() {
