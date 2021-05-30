@@ -1,8 +1,8 @@
 use engine::bevy::prelude::*;
 
 use crate::game::{
-    gui, init_stuff, spawn_enemies, ticker, units_meet_enemies, EnemySpawner, GameOver,
-    ParkingSpace, TokenPool,
+    gui, init_stuff, repair_tick, spawn_enemies, ticker, units_meet_enemies, EnemySpawner,
+    GameOver, ParkingSpace, TokenPool,
 };
 
 mod game;
@@ -23,6 +23,7 @@ impl Plugin for MyGame {
             .add_system(gui.system())
             .add_system(ticker.system())
             .add_system(units_meet_enemies.system())
-            .add_system(spawn_enemies.system());
+            .add_system(spawn_enemies.system())
+            .add_system(repair_tick.system());
     }
 }

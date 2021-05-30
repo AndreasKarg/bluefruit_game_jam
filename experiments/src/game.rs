@@ -1,12 +1,17 @@
-use std::{cmp::Ordering, marker::PhantomData, mem::discriminant, sync::Arc};
+use std::{cmp::Ordering, fmt::Display, marker::PhantomData, mem::discriminant, sync::Arc};
 
 use engine::{
     bevy::{
         core::Stopwatch,
-        ecs::prelude::{Entity, Mut},
+        ecs as bevy_ecs,
+        ecs::{
+            bundle::Bundle,
+            prelude::{Entity, Mut},
+        },
         prelude::{
             AssetServer, Commands, EventReader, EventWriter, Query, Res, ResMut, Time, Timer,
         },
+        reflect::erased_serde::private::serde::__private::Formatter,
         utils::Duration,
     },
     bevy_egui::{
@@ -36,6 +41,35 @@ pub enum CombatType {
     B,
     C,
     D,
+}
+
+pub struct Health(f64);
+
+impl Default for Health {
+    fn default() -> Self {
+        Self(1.0)
+    }
+}
+
+impl Health {
+    fn repair_tick(&mut self, time: &Time) {
+        const SECONDS_TO_FULLY_REPAIR: f64 = 5.0;
+        self.0 = (self.0 + time.delta_seconds_f64() / SECONDS_TO_FULLY_REPAIR).min(1.0);
+    }
+
+    fn take_hit(&mut self, entity: Entity, commands: &mut Commands) {
+        self.0 -= 0.25;
+
+        if self.0 <= 0.0 {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+impl Display for Health {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:.0}%", self.0 * 100.0)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -174,6 +208,12 @@ impl Unit {
     }
 }
 
+#[derive(Bundle)]
+pub struct UnitBundle {
+    unit: Unit,
+    health: Health,
+}
+
 pub struct Enemy {
     progress: Timer,
     combat_type: CombatType,
@@ -200,27 +240,45 @@ impl Enemy {
     }
 }
 
+pub fn repair_tick(time: Res<Time>, mut units: Query<(&Unit, &mut Health)>) {
+    for (unit, mut health) in units.iter_mut() {
+        if matches!(unit, Unit::InStorage) {
+            health.repair_tick(&time);
+        }
+    }
+}
+
 pub fn init_stuff(mut commands: Commands) {
-    commands.spawn().insert(Unit::InStorage);
-    commands.spawn().insert(Unit::InStorage);
-    commands.spawn().insert(Unit::InStorage);
+    commands.spawn().insert_bundle(UnitBundle {
+        unit: Unit::InStorage,
+        health: Health::default(),
+    });
+    commands.spawn().insert_bundle(UnitBundle {
+        unit: Unit::InStorage,
+        health: Health::default(),
+    });
+    commands.spawn().insert_bundle(UnitBundle {
+        unit: Unit::InStorage,
+        health: Health::default(),
+    });
 }
 
 pub fn units_meet_enemies(
     mut commands: Commands,
-    mut units: Query<&mut Unit>,
+    mut units: Query<(Entity, &mut Unit, &mut Health)>,
     mut enemies: Query<(Entity, &mut Enemy)>,
 ) {
     for (enemy_entity, enemy) in enemies.iter_mut() {
-        let suitable_units = units.iter_mut().filter(|unit| {
+        let suitable_units = units.iter_mut().filter(|(_, unit, _)| {
             matches!(**unit,
                 Unit::Patrolling(_, combat_type) if combat_type == enemy.combat_type
             )
         });
-        for mut unit in suitable_units {
+        for (unit_entity, mut unit, mut health) in suitable_units {
             if unit.progress_percent() >= enemy.remaining_percent() {
                 unit.return_to_base();
                 commands.entity(enemy_entity).despawn();
+                health.take_hit(unit_entity, &mut commands);
             }
         }
     }
@@ -333,7 +391,7 @@ pub fn ticker(
 pub fn gui(
     egui_ctx: ResMut<EguiContext>,
     _assets: Res<AssetServer>,
-    mut units: Query<&mut Unit>,
+    mut units: Query<(&mut Unit, &Health)>,
     mut enemies: Query<&mut Enemy>,
     mut parking_spaces: ResMut<TokenPool<ParkingSpace>>,
     mut ev_game_over: EventReader<GameOver>,
@@ -361,11 +419,11 @@ pub fn gui(
         ui.separator();
         ui.heading("Stored Units");
 
-        for mut unit in units.iter_mut() {
+        for (mut unit, health) in units.iter_mut() {
             match &*unit {
                 Unit::InStorage => {
                     ui.horizontal(|ui| {
-                        ui.label("Unit");
+                        ui.label(format!("Health: {}. Unit", health));
                         if !parking_spaces.can_take() {
                             ui.set_enabled(false);
                         }
@@ -377,7 +435,8 @@ pub fn gui(
                 }
                 Unit::Storing(timer) => {
                     ui.label(format!(
-                        "Moving into Storage. {:.0}% / {:.1} seconds to go.",
+                        "Health: {}. Moving into Storage. {:.0}% / {:.1} seconds to go.",
+                        health,
                         timer.percent() * 100.0,
                         (timer.duration() - timer.elapsed()).as_secs_f64()
                     ));
@@ -391,18 +450,20 @@ pub fn gui(
             parking_spaces.slots_used(),
             parking_spaces.max_count
         ));
-        for mut unit in units.iter_mut() {
+        for (mut unit, health) in units.iter_mut() {
             match &*unit {
                 Unit::UnStoring(timer, _) => {
                     ui.label(format!(
-                        "Coming out of storage. {:.0}% / {:.1} seconds to go.",
+                        "Health: {}. Coming out of storage. {:.0}% / {:.1} seconds to go.",
+                        health,
                         timer.percent() * 100.0,
                         (timer.duration() - timer.elapsed()).as_secs_f64()
                     ));
                 }
                 Unit::Parking(timer, _) => {
                     ui.label(format!(
-                        "Parking. {:.0}% / {:.1} seconds to go.",
+                        "Health: {}. Parking. {:.0}% / {:.1} seconds to go.",
+                        health,
                         timer.percent() * 100.0,
                         (timer.duration() - timer.elapsed()).as_secs_f64()
                     ));
@@ -411,7 +472,7 @@ pub fn gui(
                     let mut selected_combat_type = None;
                     let mut storage_requested = false;
                     ui.horizontal(|ui| {
-                        ui.label("Unready");
+                        ui.label(format!("Health: {}. Unready", health));
                         ui.group(|ui| {
                             ui.label("Preparations");
                             for combat_type in CombatType::iter() {
@@ -431,7 +492,8 @@ pub fn gui(
                 }
                 Unit::ParkedPreparing(timer, _, combat_type) => {
                     ui.label(format!(
-                        "Preparing combat type {}. {:.0}% / {:.1} seconds to go.",
+                        "Health: {}. Preparing combat type {}. {:.0}% / {:.1} seconds to go.",
+                        health,
                         combat_type,
                         timer.percent() * 100.0,
                         (timer.duration() - timer.elapsed()).as_secs_f64()
@@ -439,7 +501,10 @@ pub fn gui(
                 }
                 Unit::ParkedReady(_, combat_type) => {
                     let take_off_clicked = ui.horizontal(|ui| {
-                        ui.label(format!("Ready for combat type {}.", combat_type));
+                        ui.label(format!(
+                            "Health: {}. Ready for combat type {}.",
+                            health, combat_type
+                        ));
                         ui.button("Take off!").clicked()
                     });
 
@@ -452,24 +517,22 @@ pub fn gui(
         }
         ui.separator();
         ui.heading("Queuing for parking");
-        for mut unit in units.iter_mut() {
+        for (mut unit, health) in units.iter_mut() {
             match &*unit {
                 Unit::WaitingToPark => {
-                    ui.horizontal(|ui| {
-                        ui.label("Unit");
+                    ui.label(format!("Health: {}. Unit", health));
 
-                        if ui.button("Move into storage").clicked() {
-                            unit.move_into_storage();
-                        }
+                    if ui.button("Move into storage").clicked() {
+                        unit.move_into_storage();
+                    }
 
-                        if !parking_spaces.can_take() {
-                            ui.set_enabled(false);
-                        }
+                    if !parking_spaces.can_take() {
+                        ui.set_enabled(false);
+                    }
 
-                        if ui.button("Park").clicked() {
-                            unit.park_after_returning(&mut parking_spaces);
-                        }
-                    });
+                    if ui.button("Park").clicked() {
+                        unit.park_after_returning(&mut parking_spaces);
+                    }
                 }
                 _ => {}
             }
@@ -498,13 +561,13 @@ pub fn gui(
                     painter.text(
                         Pos2 { x, y },
                         Align2([Align::Min, Align::Center]),
-                        format!("◀ {:.1}s", enemy.progress.remaining_seconds()),
+                        format!("◀ t-{:.1}s", enemy.progress.remaining_seconds()),
                         TextStyle::Heading,
                         Color32::RED,
                     );
                 }
 
-                for unit in units.iter_mut() {
+                for (unit, health) in units.iter_mut() {
                     match &*unit {
                         Unit::Patrolling(progress, unit_combat_type)
                             if *unit_combat_type == combat_type =>
@@ -513,7 +576,7 @@ pub fn gui(
                             painter.text(
                                 Pos2 { x, y },
                                 Align2([Align::Max, Align::Center]),
-                                "▶",
+                                format!("{} ▶", health),
                                 TextStyle::Heading,
                                 Color32::GREEN,
                             );
@@ -525,7 +588,7 @@ pub fn gui(
                             painter.text(
                                 Pos2 { x, y },
                                 Align2([Align::Max, Align::Center]),
-                                "▶",
+                                format!("{} ▶", health),
                                 TextStyle::Heading,
                                 Color32::GOLD,
                             );
