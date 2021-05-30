@@ -343,13 +343,6 @@ pub fn gui(
                         }
                     });
                 }
-                Unit::UnMothballing(timer, _) => {
-                    ui.label(format!(
-                        "UnMothballing. {:.0} / {:.1} seconds to go.",
-                        timer.percent() * 100.0,
-                        (timer.duration() - timer.elapsed()).as_secs_f64()
-                    ));
-                }
                 _ => {}
             }
         }
@@ -361,6 +354,13 @@ pub fn gui(
         ));
         for mut unit in units.iter_mut() {
             match &*unit {
+                Unit::UnMothballing(timer, _) => {
+                    ui.label(format!(
+                        "UnMothballing. {:.0} / {:.1} seconds to go.",
+                        timer.percent() * 100.0,
+                        (timer.duration() - timer.elapsed()).as_secs_f64()
+                    ));
+                }
                 Unit::ParkedUnready(parking_space) => {
                     let mut selected_combat_type = None;
                     ui.horizontal(|ui| {
