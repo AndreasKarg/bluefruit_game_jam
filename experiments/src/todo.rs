@@ -20,4 +20,4 @@
 /// Hold zem off for as long as you can and ve vill propose you for ze Eiserne Pflaume medal!
 ///
 /// [For ze Kaiser! For PLUMANNY!!]
-struct Ideas {}
+enum Ideas {}

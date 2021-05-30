@@ -49,6 +49,7 @@ pub enum Unit {
     Returning(Timer, CombatType),
     WaitingToPark,
     Storing(Timer),
+    Parking(Timer, Token<ParkingSpace>),
 }
 
 impl Unit {
@@ -65,14 +66,14 @@ impl Unit {
                 timer.tick(time.delta());
 
                 if timer.finished() {
-                    self.try_to_park(parking_spaces);
+                    *self = Self::WaitingToPark;
                 }
             }
             Self::Returning(timer, _) => {
                 timer.tick(time.delta());
 
                 if timer.finished() {
-                    self.try_to_park(parking_spaces);
+                    *self = Self::WaitingToPark;
                 }
             }
             Self::UnStoring(timer, parking_space) => {
@@ -82,9 +83,6 @@ impl Unit {
                     *self = Self::ParkedUnready(parking_space.clone());
                 }
             }
-            Self::WaitingToPark => {
-                self.try_to_park(parking_spaces);
-            }
             Unit::Storing(timer) => {
                 timer.tick(time.delta());
 
@@ -92,17 +90,17 @@ impl Unit {
                     *self = Self::InStorage;
                 }
             }
+            Self::Parking(timer, parking_space) => {
+                timer.tick(time.delta());
+
+                if timer.finished() {
+                    *self = Self::ParkedUnready(parking_space.clone());
+                }
+            }
             Unit::InStorage => {}
             Unit::ParkedUnready(_) => {}
             Unit::ParkedReady(_, _) => {}
-        }
-    }
-
-    fn try_to_park(&mut self, parking_spaces: &mut TokenPool<ParkingSpace>) {
-        if let Some(parking_space) = parking_spaces.try_take() {
-            *self = Self::ParkedUnready(parking_space);
-        } else {
-            *self = Self::WaitingToPark;
+            Unit::WaitingToPark => {}
         }
     }
 
@@ -163,6 +161,16 @@ impl Unit {
         }
 
         *self = Self::Storing(Timer::from_seconds(10.0, false));
+    }
+
+    fn park_after_returning(&mut self, parking_spaces: &mut TokenPool<ParkingSpace>) {
+        if let Self::WaitingToPark = self {
+            let parking_space = parking_spaces.try_take().unwrap();
+
+            *self = Self::Parking(Timer::from_seconds(5.0, false), parking_space);
+        } else {
+            panic!("Invalid state for parking.")
+        }
     }
 }
 
@@ -392,6 +400,13 @@ pub fn gui(
                         (timer.duration() - timer.elapsed()).as_secs_f64()
                     ));
                 }
+                Unit::Parking(timer, _) => {
+                    ui.label(format!(
+                        "Parking. {:.0}% / {:.1} seconds to go.",
+                        timer.percent() * 100.0,
+                        (timer.duration() - timer.elapsed()).as_secs_f64()
+                    ));
+                }
                 Unit::ParkedUnready(parking_space) => {
                     let mut selected_combat_type = None;
                     let mut storage_requested = false;
@@ -437,10 +452,24 @@ pub fn gui(
         }
         ui.separator();
         ui.heading("Queuing for parking");
-        for unit in units.iter_mut() {
+        for mut unit in units.iter_mut() {
             match &*unit {
                 Unit::WaitingToPark => {
-                    ui.label("Unit");
+                    ui.horizontal(|ui| {
+                        ui.label("Unit");
+
+                        if ui.button("Move into storage").clicked() {
+                            unit.move_into_storage();
+                        }
+
+                        if !parking_spaces.can_take() {
+                            ui.set_enabled(false);
+                        }
+
+                        if ui.button("Park").clicked() {
+                            unit.park_after_returning(&mut parking_spaces);
+                        }
+                    });
                 }
                 _ => {}
             }
