@@ -1322,6 +1322,7 @@ dependencies = [
  "engine",
  "rand",
  "rand_derive2",
+ "rand_distr",
  "strum",
 ]
 
@@ -2719,6 +2720,16 @@ dependencies = [
  "proc_macro2_helper",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "rand_distr"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da9e8f32ad24fb80d07d2323a9a2ce8b30d68a62b8cb4df88119ff49a698f038"
+dependencies = [
+ "num-traits",
+ "rand",
 ]
 
 [[package]]

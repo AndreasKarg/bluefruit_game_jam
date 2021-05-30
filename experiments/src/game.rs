@@ -2,6 +2,7 @@ use std::{cmp::Ordering, marker::PhantomData, mem::discriminant, sync::Arc};
 
 use engine::{
     bevy::{
+        core::Stopwatch,
         ecs::prelude::{Entity, Mut},
         prelude::{
             AssetServer, Commands, EventReader, EventWriter, Query, Res, ResMut, Time, Timer,
@@ -14,7 +15,9 @@ use engine::{
         EguiContext,
     },
 };
+use rand::prelude::Distribution;
 use rand_derive2::RandGen;
+use rand_distr::Normal;
 use strum::{Display, EnumIter, IntoEnumIterator};
 
 trait TimerRemaining {
@@ -169,9 +172,6 @@ pub fn init_stuff(mut commands: Commands) {
     commands.spawn().insert(Unit::Mothballed);
     commands.spawn().insert(Unit::Mothballed);
     commands.spawn().insert(Unit::Mothballed);
-    commands
-        .spawn()
-        .insert(Enemy::new(Duration::from_secs_f64(20.0), CombatType::A));
 }
 
 pub fn units_meet_enemies(
@@ -195,26 +195,45 @@ pub fn units_meet_enemies(
 }
 
 pub struct EnemySpawner {
-    timer: Timer,
+    time_to_next_spawn: Timer,
+    mean_time_between_enemies: Duration,
 }
 
 impl Default for EnemySpawner {
     fn default() -> Self {
+        let initial_mean_time_between_enemies = Duration::from_secs_f64(20.0);
+
+        let time_to_first_enemy = Self::new_time_to_next_spawn(initial_mean_time_between_enemies);
+
         Self {
-            timer: Timer::new(Duration::from_secs_f64(15.0), true),
+            time_to_next_spawn: Timer::new(time_to_first_enemy, false),
+            mean_time_between_enemies: initial_mean_time_between_enemies,
         }
     }
 }
 
 impl EnemySpawner {
-    fn tick(&mut self, time: &Time, mut commands: Commands) {
-        self.timer.tick(time.delta());
+    fn new_time_to_next_spawn(mean_time_between_enemies: Duration) -> Duration {
+        const SPREAD: f64 = 5.0;
+        let normal = Normal::new(mean_time_between_enemies.as_secs_f64(), SPREAD).unwrap();
 
-        if self.timer.finished() {
+        let seconds_to_next_spawn = normal.sample(&mut rand::thread_rng()).clamp(1.0, 10.0);
+        Duration::from_secs_f64(seconds_to_next_spawn)
+    }
+
+    fn tick(&mut self, time: &Time, mut commands: Commands) {
+        self.time_to_next_spawn.tick(time.delta());
+
+        if self.time_to_next_spawn.finished() {
             commands.spawn().insert(Enemy::new(
                 Duration::from_secs_f64(20.0),
                 CombatType::generate_random(),
             ));
+
+            self.mean_time_between_enemies = self.mean_time_between_enemies.mul_f64(0.9);
+            let time_to_next_spawn = Self::new_time_to_next_spawn(self.mean_time_between_enemies);
+            self.time_to_next_spawn.set_duration(time_to_next_spawn);
+            self.time_to_next_spawn.reset();
         }
     }
 }
