@@ -18,7 +18,7 @@ impl Plugin for MyGame {
     fn build(&self, app: &mut AppBuilder) {
         app.add_startup_system(init_stuff.system())
             .init_resource::<EnemySpawner>()
-            .insert_resource(TokenPool::<ParkingSpace>::new(2))
+            .insert_resource(TokenPool::<ParkingSpace>::new(3))
             .add_event::<GameOver>()
             .add_system(gui.system())
             .add_system(ticker.system())

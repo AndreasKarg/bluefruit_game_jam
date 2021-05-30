@@ -53,7 +53,7 @@ impl Default for Health {
 
 impl Health {
     fn repair_tick(&mut self, time: &Time) {
-        const SECONDS_TO_FULLY_REPAIR: f64 = 5.0;
+        const SECONDS_TO_FULLY_REPAIR: f64 = 15.0;
         self.0 = (self.0 + time.delta_seconds_f64() / SECONDS_TO_FULLY_REPAIR).min(1.0);
     }
 
@@ -249,18 +249,12 @@ pub fn repair_tick(time: Res<Time>, mut units: Query<(&Unit, &mut Health)>) {
 }
 
 pub fn init_stuff(mut commands: Commands) {
-    commands.spawn().insert_bundle(UnitBundle {
-        unit: Unit::InStorage,
-        health: Health::default(),
-    });
-    commands.spawn().insert_bundle(UnitBundle {
-        unit: Unit::InStorage,
-        health: Health::default(),
-    });
-    commands.spawn().insert_bundle(UnitBundle {
-        unit: Unit::InStorage,
-        health: Health::default(),
-    });
+    for _ in 0..8 {
+        commands.spawn().insert_bundle(UnitBundle {
+            unit: Unit::InStorage,
+            health: Health::default(),
+        });
+    }
 }
 
 pub fn units_meet_enemies(
@@ -291,7 +285,7 @@ pub struct EnemySpawner {
 
 impl Default for EnemySpawner {
     fn default() -> Self {
-        let initial_mean_time_between_enemies = Duration::from_secs_f64(20.0);
+        let initial_mean_time_between_enemies = Duration::from_secs_f64(30.0);
 
         let time_to_first_enemy = Self::new_time_to_next_spawn(initial_mean_time_between_enemies);
 
@@ -316,11 +310,11 @@ impl EnemySpawner {
 
         if self.time_to_next_spawn.finished() {
             commands.spawn().insert(Enemy::new(
-                Duration::from_secs_f64(20.0),
+                Duration::from_secs_f64(30.0),
                 CombatType::generate_random(),
             ));
 
-            self.mean_time_between_enemies = self.mean_time_between_enemies.mul_f64(0.9);
+            self.mean_time_between_enemies = self.mean_time_between_enemies.mul_f64(0.97);
             let time_to_next_spawn = Self::new_time_to_next_spawn(self.mean_time_between_enemies);
             self.time_to_next_spawn.set_duration(time_to_next_spawn);
             self.time_to_next_spawn.reset();
