@@ -1,13 +1,9 @@
-use std::{cmp::Ordering, fmt::Display, marker::PhantomData, mem::discriminant, sync::Arc};
+use std::{fmt::Display, marker::PhantomData, sync::Arc};
 
 use engine::{
     bevy::{
-        core::Stopwatch,
         ecs as bevy_ecs,
-        ecs::{
-            bundle::Bundle,
-            prelude::{Entity, Mut},
-        },
+        ecs::{bundle::Bundle, prelude::Entity},
         prelude::{
             AssetServer, Commands, EventReader, EventWriter, Query, Res, ResMut, Time, Timer,
         },
@@ -16,7 +12,7 @@ use engine::{
     },
     bevy_egui::{
         egui,
-        egui::{Align, Align2, Color32, Grid, Pos2, TextStyle, Ui},
+        egui::{Align, Align2, Color32, Pos2, TextStyle, Visuals},
         EguiContext,
     },
 };
@@ -87,7 +83,7 @@ pub enum Unit {
 }
 
 impl Unit {
-    fn tick(&mut self, time: &Time, parking_spaces: &mut TokenPool<ParkingSpace>) {
+    fn tick(&mut self, time: &Time) {
         match self {
             Self::ParkedPreparing(timer, parking_space, combat_type) => {
                 timer.tick(time.delta());
@@ -176,7 +172,7 @@ impl Unit {
     }
 
     fn take_off(&mut self) {
-        if let Self::ParkedReady(parking_space, combat_type) = self {
+        if let Self::ParkedReady(_, combat_type) = self {
             *self = Self::Patrolling(Timer::from_seconds(30.0, false), *combat_type);
         } else {
             panic!("Invalid state for taking off")
@@ -229,10 +225,6 @@ impl Enemy {
 
     fn tick(&mut self, time: &Time) {
         self.progress.tick(time.delta());
-    }
-
-    fn reached_destination(&self) -> bool {
-        self.progress.finished()
     }
 
     fn remaining_percent(&self) -> f32 {
@@ -367,11 +359,10 @@ pub fn ticker(
     time: Res<Time>,
     mut units: Query<&mut Unit>,
     mut enemies: Query<&mut Enemy>,
-    mut parking_spaces: ResMut<TokenPool<ParkingSpace>>,
     mut ev_game_over: EventWriter<GameOver>,
 ) {
     for mut unit in units.iter_mut() {
-        unit.tick(&time, &mut parking_spaces);
+        unit.tick(&time);
     }
 
     for mut enemy in enemies.iter_mut() {
@@ -391,6 +382,15 @@ pub fn gui(
     mut ev_game_over: EventReader<GameOver>,
     time: Res<Time>,
 ) {
+    let dark_purple = Color32::from_rgb(77, 53, 77).linear_multiply(0.25);
+
+    let mut visuals = Visuals::dark();
+
+    visuals.extreme_bg_color = dark_purple;
+    visuals.widgets.noninteractive.bg_fill = dark_purple;
+
+    egui_ctx.ctx().set_visuals(visuals);
+
     egui::TopPanel::top("top_panel").show(egui_ctx.ctx(), |ui| {
         // The top panel is often a good place for a menu bar:
         egui::menu::bar(ui, |ui| {
@@ -475,7 +475,7 @@ pub fn gui(
                         (timer.duration() - timer.elapsed()).as_secs_f64()
                     ));
                 }
-                Unit::ParkedUnready(parking_space) => {
+                Unit::ParkedUnready(_) => {
                     let mut selected_combat_type = None;
                     let mut storage_requested = false;
                     ui.horizontal(|ui| {
