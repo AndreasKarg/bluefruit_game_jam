@@ -3,10 +3,11 @@ use std::{fmt::Display, marker::PhantomData, sync::Arc};
 use engine::{
     bevy::{
         ecs as bevy_ecs,
-        ecs::{bundle::Bundle, prelude::Entity},
-        prelude::{
-            AssetServer, Commands, EventReader, EventWriter, Query, Res, ResMut, Time, Timer,
+        ecs::{
+            bundle::Bundle,
+            prelude::{Entity, State},
         },
+        prelude::{AssetServer, Commands, Query, Res, ResMut, Time, Timer},
         reflect::erased_serde::private::serde::__private::Formatter,
         utils::Duration,
     },
@@ -21,6 +22,12 @@ use rand_derive2::RandGen;
 use rand_distr::Normal;
 use strum::{Display, EnumIter, IntoEnumIterator};
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum GameState {
+    Running,
+    GameOver,
+}
+
 trait TimerRemaining {
     fn remaining_seconds(&self) -> f32;
 }
@@ -28,6 +35,15 @@ trait TimerRemaining {
 impl TimerRemaining for Timer {
     fn remaining_seconds(&self) -> f32 {
         (self.duration() - self.elapsed()).as_secs_f32()
+    }
+}
+
+#[derive(Default)]
+pub struct PlayTime(Duration);
+
+impl PlayTime {
+    fn tick(&mut self, time: &Time) {
+        self.0 += time.delta();
     }
 }
 
@@ -353,13 +369,12 @@ impl<T> TokenPool<T> {
     }
 }
 
-pub struct GameOver {}
-
 pub fn ticker(
     time: Res<Time>,
     mut units: Query<&mut Unit>,
     mut enemies: Query<&mut Enemy>,
-    mut ev_game_over: EventWriter<GameOver>,
+    mut game_state: ResMut<State<GameState>>,
+    mut play_time: ResMut<PlayTime>,
 ) {
     for mut unit in units.iter_mut() {
         unit.tick(&time);
@@ -368,9 +383,11 @@ pub fn ticker(
     for mut enemy in enemies.iter_mut() {
         enemy.tick(&time);
         if enemy.progress.finished() {
-            ev_game_over.send(GameOver {})
+            game_state.set(GameState::GameOver).unwrap();
         }
     }
+
+    play_time.tick(&time);
 }
 
 pub fn gui(
@@ -379,8 +396,8 @@ pub fn gui(
     mut units: Query<(&mut Unit, &Health)>,
     mut enemies: Query<&mut Enemy>,
     mut parking_spaces: ResMut<TokenPool<ParkingSpace>>,
-    mut ev_game_over: EventReader<GameOver>,
-    time: Res<Time>,
+    game_state: Res<State<GameState>>,
+    play_time: Res<PlayTime>,
 ) {
     let dark_purple = Color32::from_rgb(77, 53, 77).linear_multiply(0.25);
 
@@ -403,9 +420,13 @@ pub fn gui(
     });
 
     egui::CentralPanel::default().show(egui_ctx.ctx(), |ui| {
+        if *game_state.current() == GameState::GameOver {
+            ui.set_enabled(false);
+        }
+
         ui.heading(format!(
             "You have survived for {:.0} seconds so far!",
-            time.time_since_startup().as_secs_f64()
+            play_time.0.as_secs_f64()
         ));
         ui.label("Ze evil people from ze Meatropolis wiz zeir Queen on zat island in ze sea are \
             invading our great country of Fruitopia! \
@@ -611,14 +632,13 @@ pub fn gui(
         }
     });
 
-    for _ in ev_game_over.iter() {
+    if *game_state.current() == GameState::GameOver {
         egui::Window::new("Hit!").show(egui_ctx.ctx(), |ui| {
-            let survival_duration = time.time_since_startup().as_secs_f64();
 
             ui.heading("Your base was hit! You are dead !!!!");
             ui.label(format!(
                 "You survived for {:.0} seconds though, which is great! Now take a screenshot and brag to your friends about your m4d sk1llz :-D",
-                survival_duration
+                play_time.0.as_secs_f64()
             ));
             if ui.button("Thanks man! This was totally fun!! Let me try this again...").clicked() {
                 std::process::exit(0);
