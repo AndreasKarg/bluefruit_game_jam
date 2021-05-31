@@ -13,7 +13,7 @@ use engine::{
     },
     bevy_egui::{
         egui,
-        egui::{Align, Align2, Color32, Pos2, TextStyle, Visuals},
+        egui::{Align, Align2, Color32, Pos2, TextStyle, Vec2, Visuals},
         EguiContext,
     },
 };
@@ -633,16 +633,17 @@ pub fn gui(
     });
 
     if *game_state.current() == GameState::GameOver {
-        egui::Window::new("Hit!").show(egui_ctx.ctx(), |ui| {
-
-            ui.heading("Your base was hit! You are dead !!!!");
-            ui.label(format!(
-                "You survived for {:.0} seconds though, which is great! Now take a screenshot and brag to your friends about your m4d sk1llz :-D",
-                play_time.0.as_secs_f64()
-            ));
-            if ui.button("Thanks man! This was totally fun!! Let me try this again...").clicked() {
-                std::process::exit(0);
-            };
-        });
+        egui::Window::new("Hit!")
+            .anchor(Align2::CENTER_CENTER, Vec2::new(0.0,0.0))
+            .show(egui_ctx.ctx(), |ui| {
+                ui.heading("Your base was hit! You are dead !!!!");
+                ui.label(format!(
+                    "You survived for {:.0} seconds though, which is great! Now take a screenshot and brag to your friends about your m4d sk1llz :-D",
+                    play_time.0.as_secs_f64()
+                ));
+                if ui.button("Thanks man! This was totally fun!! Let me try this again...").clicked() {
+                    std::process::exit(0);
+                };
+            });
     }
 }
