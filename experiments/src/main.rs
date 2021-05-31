@@ -9,7 +9,7 @@ mod game;
 mod todo;
 
 fn main() {
-    engine::run(MyGame);
+    engine::run(MyGame, "Fruitopian Defender");
 }
 
 struct MyGame;

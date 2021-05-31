@@ -1316,17 +1316,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7531096570974c3a9dcf9e4b8e1cede1ec26cf5046219fb3b9d897503b9be59"
 
 [[package]]
-name = "experiments"
-version = "0.1.0"
-dependencies = [
- "engine",
- "rand",
- "rand_derive2",
- "rand_distr",
- "strum",
-]
-
-[[package]]
 name = "fastrand"
 version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1388,6 +1377,17 @@ name = "foreign-types-shared"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
+
+[[package]]
+name = "fruitopian_defender"
+version = "1.0.0"
+dependencies = [
+ "engine",
+ "rand",
+ "rand_derive2",
+ "rand_distr",
+ "strum",
+]
 
 [[package]]
 name = "fsevent-sys"

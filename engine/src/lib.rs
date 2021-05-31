@@ -4,8 +4,12 @@ use bevy_egui::{EguiPlugin, EguiSettings};
 pub extern crate bevy;
 pub extern crate bevy_egui;
 
-pub fn run<G: Plugin>(game: G) {
+pub fn run<G: Plugin>(game: G, title: &str) {
     App::build()
+        .insert_resource(WindowDescriptor {
+            title: title.to_string(),
+            ..Default::default()
+        })
         .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
         .insert_resource(Msaa { samples: 4 })
         .add_plugins(DefaultPlugins)

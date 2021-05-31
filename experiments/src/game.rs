@@ -479,16 +479,13 @@ pub fn gui(
                     let mut selected_combat_type = None;
                     let mut storage_requested = false;
                     ui.horizontal(|ui| {
-                        ui.label(format!("Health: {}. Unready", health));
-                        ui.group(|ui| {
-                            ui.label("Preparations");
-                            for combat_type in CombatType::iter() {
-                                if ui.button(combat_type.to_string()).clicked() {
-                                    selected_combat_type = Some(combat_type);
-                                }
+                        ui.label(format!("Health: {}. Unit not ready. Prepare for... ", health));
+                        for combat_type in CombatType::iter() {
+                            if ui.button(format!("... {}", combat_type.to_string())).clicked() {
+                                selected_combat_type = Some(combat_type);
                             }
-                            storage_requested = ui.button("Move into storage").clicked();
-                        })
+                        }
+                        storage_requested = ui.button("Move into storage").clicked();
                     });
 
                     if let Some(combat_type) = selected_combat_type {
@@ -528,19 +525,21 @@ pub fn gui(
         for (mut unit, health) in units.iter_mut() {
             match &*unit {
                 Unit::WaitingToPark => {
-                    ui.label(format!("Health: {}. Unit", health));
+                    ui.horizontal(|ui| {
+                        ui.label(format!("Health: {}. Unit", health));
 
-                    if ui.button("Move into storage").clicked() {
-                        unit.move_into_storage();
-                    }
+                        if ui.button("Move into storage").clicked() {
+                            unit.move_into_storage();
+                        }
 
-                    if !parking_spaces.can_take() {
-                        ui.set_enabled(false);
-                    }
+                        if !parking_spaces.can_take() {
+                            ui.set_enabled(false);
+                        }
 
-                    if ui.button("Park").clicked() {
-                        unit.park_after_returning(&mut parking_spaces);
-                    }
+                        if ui.button("Park").clicked() {
+                            unit.park_after_returning(&mut parking_spaces);
+                        }
+                    });
                 }
                 _ => {}
             }
