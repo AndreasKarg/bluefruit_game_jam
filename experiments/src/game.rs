@@ -541,7 +541,7 @@ pub fn gui(
             }
         }
         ui.separator();
-        ui.heading("Queuing for parking");
+        ui.heading("Waiting to Return");
         ui.label("Units here are just standing around when they could be fighting or getting repaired! Move them on as quickly as you can!");
         for (mut unit, health) in units.iter_mut() {
             match &*unit {
@@ -569,8 +569,8 @@ pub fn gui(
         ui.separator();
 
         ui.heading("The Battlezone");
-        ui.label("Enemies (red) approach from the right on different lanes. Prepare your units for the\
-        right type of lane and send them off to fight. Each unit (green) can fend off a single enemy before it returns to base (amber).\
+        ui.label("Enemies (red) approach from the right on different lanes. Prepare your units for the \
+        right type of lane and send them off to fight. Each unit (green) can fend off a single enemy before it returns to base (amber). \
         Your units will wear out with use. Remember to repair them!");
         ui.separator();
 
