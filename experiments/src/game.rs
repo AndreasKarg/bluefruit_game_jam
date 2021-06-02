@@ -88,7 +88,7 @@ pub enum Unit {
 
 impl Unit {
     fn tick(&mut self, time: &Time) {
-        web_sys::console::log_1(&format!("Tick - time: {:#?}", time).into());
+        // web_sys::console::log_1(&format!("Tick - time: {:#?}", time).into());
         match self {
             Self::ParkedPreparing(timer, parking_space, combat_type) => {
                 timer.tick(time.delta());
@@ -388,7 +388,7 @@ pub fn gui(
     game_state: &GameState,
     play_time: &PlayTime,
 ) {
-    web_sys::console::log_1(&"Gui!".into());
+    // web_sys::console::log_1(&"Gui!".into());
     let dark_purple = Color32::from_rgb(77, 53, 77).linear_multiply(0.25);
 
     let mut visuals = Visuals::dark();

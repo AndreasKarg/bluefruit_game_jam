@@ -33,7 +33,8 @@ pub struct MyGame {
 
 impl epi::App for MyGame {
     fn update(&mut self, ctx: &CtxRef, frame: &mut Frame<'_>) {
-        web_sys::console::log_1(&format!("GameState: {:#?}", self.game_state).into());
+        ctx.request_repaint();
+        // web_sys::console::log_1(&format!("GameState: {:#?}", self.game_state).into());
         if self.game_state == GameState::Running {
             ticker(
                 &self.time,

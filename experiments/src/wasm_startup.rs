@@ -17,7 +17,7 @@ use crate::{game::init_stuff, MyGame};
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue> {
-    web_sys::console::log_1(&"Start!".into());
+    // web_sys::console::log_1(&"Start!".into());
     panic::set_hook(Box::new(console_error_panic_hook::hook));
     let mut app = MyGame::default();
     init_stuff(&mut app.units);

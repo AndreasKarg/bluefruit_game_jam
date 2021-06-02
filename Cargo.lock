@@ -510,7 +510,6 @@ dependencies = [
  "rand_distr",
  "retain_mut",
  "strum",
- "web-sys",
 ]
 
 [[package]]
