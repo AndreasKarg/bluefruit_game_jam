@@ -2,7 +2,6 @@ use std::{
     fmt::{Display, Formatter},
     marker::PhantomData,
     sync::Arc,
-    time::Duration,
 };
 
 use eframe::{
@@ -12,14 +11,21 @@ use eframe::{
 use rand::prelude::Distribution;
 use rand_derive2::RandGen;
 use rand_distr::Normal;
+use retain_mut::RetainMut;
 use strum::{Display, EnumIter, IntoEnumIterator};
 
-use crate::helpers::{Time, Timer};
+use crate::helpers::{Duration, Time, Timer};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum GameState {
     Running,
     GameOver,
+}
+
+impl Default for GameState {
+    fn default() -> Self {
+        Self::Running
+    }
 }
 
 #[derive(Default)]
@@ -53,14 +59,10 @@ impl Health {
         self.0 = (self.0 + time.delta_seconds_f64() / SECONDS_TO_FULLY_REPAIR).min(1.0);
     }
 
-    fn take_hit(mut self) -> Option<Self> {
+    fn take_hit(&mut self) -> bool {
         self.0 -= 0.25;
 
-        if self.0 <= 0.0 {
-            None
-        } else {
-            Some(self)
-        }
+        self.0 >= 0.0
     }
 }
 
@@ -86,6 +88,7 @@ pub enum Unit {
 
 impl Unit {
     fn tick(&mut self, time: &Time) {
+        web_sys::console::log_1(&format!("Tick - time: {:#?}", time).into());
         match self {
             Self::ParkedPreparing(timer, parking_space, combat_type) => {
                 timer.tick(time.delta());
@@ -244,21 +247,27 @@ pub fn init_stuff(units: &mut Vec<UnitBundle>) {
     }
 }
 
-pub fn units_meet_enemies(units: &mut [UnitBundle], enemies: &mut [Enemy]) {
-    for enemy in enemies.iter_mut() {
-        let suitable_units = units.iter_mut().filter(|UnitBundle(unit, _)| {
-            matches!(*unit,
+pub fn units_meet_enemies(units: &mut Vec<UnitBundle>, enemies: &mut Vec<Enemy>) {
+    enemies.retain(|enemy| {
+        let mut hit = false;
+        units.retain_mut(|UnitBundle(unit, health)| {
+            if !matches!(*unit,
                 Unit::Patrolling(_, combat_type) if combat_type == enemy.combat_type
-            )
-        });
-        for UnitBundle(unit, health) in suitable_units {
+            ) {
+                return true;
+            }
+
             if unit.progress_percent() >= enemy.remaining_percent() {
                 unit.return_to_base();
-                todo!("commands.entity(enemy_entity).despawn();");
-                todo!("health.take_hit();");
+                hit = true;
+                return health.take_hit();
             }
-        }
-    }
+
+            true
+        });
+
+        !hit
+    });
 }
 
 pub struct EnemySpawner {
@@ -319,6 +328,12 @@ pub struct TokenPool<T> {
     max_count: usize,
 }
 
+impl<T> Default for TokenPool<T> {
+    fn default() -> Self {
+        Self::new(3)
+    }
+}
+
 impl<T> TokenPool<T> {
     pub fn new(initial_count: usize) -> Self {
         Self {
@@ -346,12 +361,12 @@ impl<T> TokenPool<T> {
 
 pub fn ticker(
     time: &Time,
-    units: &mut [Unit],
+    units: &mut [UnitBundle],
     enemies: &mut [Enemy],
     game_state: &mut GameState,
     play_time: &mut PlayTime,
 ) {
-    for mut unit in units.iter_mut() {
+    for UnitBundle(unit, _) in units.iter_mut() {
         unit.tick(&time);
     }
 
@@ -366,13 +381,14 @@ pub fn ticker(
 }
 
 pub fn gui(
-    egui_ctx: &mut CtxRef,
+    egui_ctx: &CtxRef,
     units: &mut [UnitBundle],
     enemies: &mut [Enemy],
     parking_spaces: &mut TokenPool<ParkingSpace>,
     game_state: &GameState,
     play_time: &PlayTime,
 ) {
+    web_sys::console::log_1(&"Gui!".into());
     let dark_purple = Color32::from_rgb(77, 53, 77).linear_multiply(0.25);
 
     let mut visuals = Visuals::dark();

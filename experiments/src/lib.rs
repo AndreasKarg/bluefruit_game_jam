@@ -2,9 +2,12 @@
 
 use eframe::{egui::CtxRef, epi, epi::Frame};
 
-use crate::game::{
-    gui, init_stuff, repair_tick, spawn_enemies, ticker, units_meet_enemies, EnemySpawner,
-    GameState, ParkingSpace, PlayTime, TokenPool,
+use crate::{
+    game::{
+        gui, init_stuff, repair_tick, spawn_enemies, ticker, units_meet_enemies, Enemy,
+        EnemySpawner, GameState, ParkingSpace, PlayTime, TokenPool, Unit, UnitBundle,
+    },
+    helpers::Time,
 };
 
 mod game;
@@ -17,21 +20,48 @@ fn main() {
     engine::run(MyGame, "Fruitopian Defender");
 }
 
-pub struct MyGame;
-
-impl Default for MyGame {
-    fn default() -> Self {
-        Self {}
-    }
+#[derive(Default)]
+pub struct MyGame {
+    enemy_spawner: EnemySpawner,
+    play_time: PlayTime,
+    parking_spaces: TokenPool<ParkingSpace>,
+    game_state: GameState,
+    time: Time,
+    units: Vec<UnitBundle>,
+    enemies: Vec<Enemy>,
 }
 
 impl epi::App for MyGame {
     fn update(&mut self, ctx: &CtxRef, frame: &mut Frame<'_>) {
-        todo!()
+        web_sys::console::log_1(&format!("GameState: {:#?}", self.game_state).into());
+        if self.game_state == GameState::Running {
+            ticker(
+                &self.time,
+                self.units.as_mut_slice(),
+                self.enemies.as_mut_slice(),
+                &mut self.game_state,
+                &mut self.play_time,
+            );
+
+            units_meet_enemies(&mut self.units, &mut self.enemies);
+            spawn_enemies(&mut self.enemy_spawner, &self.time, &mut self.enemies);
+            repair_tick(&self.time, self.units.as_mut_slice());
+        }
+
+        gui(
+            ctx,
+            self.units.as_mut_slice(),
+            self.enemies.as_mut_slice(),
+            &mut self.parking_spaces,
+            &self.game_state,
+            &self.play_time,
+        );
+
+        self.time.tick();
     }
 
     fn name(&self) -> &str {
-        todo!()
+        "Fruitopian Defender"
     }
 }
 
