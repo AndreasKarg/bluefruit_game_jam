@@ -1,41 +1,25 @@
-use std::{fmt::Display, marker::PhantomData, sync::Arc};
+use std::{
+    fmt::{Display, Formatter},
+    marker::PhantomData,
+    sync::Arc,
+    time::Duration,
+};
 
-use engine::{
-    bevy::{
-        ecs as bevy_ecs,
-        ecs::{
-            bundle::Bundle,
-            prelude::{Entity, State},
-        },
-        prelude::{AssetServer, Commands, Query, Res, ResMut, Time, Timer},
-        reflect::erased_serde::private::serde::__private::Formatter,
-        utils::Duration,
-    },
-    bevy_egui::{
-        egui,
-        egui::{Align, Align2, Color32, Pos2, TextStyle, Vec2, Visuals},
-        EguiContext,
-    },
+use eframe::{
+    egui,
+    egui::{Align, Align2, Color32, CtxRef, Pos2, TextStyle, Vec2, Visuals},
 };
 use rand::prelude::Distribution;
 use rand_derive2::RandGen;
 use rand_distr::Normal;
 use strum::{Display, EnumIter, IntoEnumIterator};
 
+use crate::helpers::{Time, Timer};
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum GameState {
     Running,
     GameOver,
-}
-
-trait TimerRemaining {
-    fn remaining_seconds(&self) -> f32;
-}
-
-impl TimerRemaining for Timer {
-    fn remaining_seconds(&self) -> f32 {
-        (self.duration() - self.elapsed()).as_secs_f32()
-    }
 }
 
 #[derive(Default)]
@@ -69,11 +53,13 @@ impl Health {
         self.0 = (self.0 + time.delta_seconds_f64() / SECONDS_TO_FULLY_REPAIR).min(1.0);
     }
 
-    fn take_hit(&mut self, entity: Entity, commands: &mut Commands) {
+    fn take_hit(mut self) -> Option<Self> {
         self.0 -= 0.25;
 
         if self.0 <= 0.0 {
-            commands.entity(entity).despawn();
+            None
+        } else {
+            Some(self)
         }
     }
 }
@@ -220,11 +206,7 @@ impl Unit {
     }
 }
 
-#[derive(Bundle)]
-pub struct UnitBundle {
-    unit: Unit,
-    health: Health,
-}
+pub struct UnitBundle(Unit, Health);
 
 pub struct Enemy {
     progress: Timer,
@@ -248,39 +230,32 @@ impl Enemy {
     }
 }
 
-pub fn repair_tick(time: Res<Time>, mut units: Query<(&Unit, &mut Health)>) {
-    for (unit, mut health) in units.iter_mut() {
+pub fn repair_tick(time: &Time, units: &mut [UnitBundle]) {
+    for UnitBundle(unit, health) in units.iter_mut() {
         if matches!(unit, Unit::InStorage) {
             health.repair_tick(&time);
         }
     }
 }
 
-pub fn init_stuff(mut commands: Commands) {
+pub fn init_stuff(units: &mut Vec<UnitBundle>) {
     for _ in 0..8 {
-        commands.spawn().insert_bundle(UnitBundle {
-            unit: Unit::InStorage,
-            health: Health::default(),
-        });
+        units.push(UnitBundle(Unit::InStorage, Health::default()));
     }
 }
 
-pub fn units_meet_enemies(
-    mut commands: Commands,
-    mut units: Query<(Entity, &mut Unit, &mut Health)>,
-    mut enemies: Query<(Entity, &mut Enemy)>,
-) {
-    for (enemy_entity, enemy) in enemies.iter_mut() {
-        let suitable_units = units.iter_mut().filter(|(_, unit, _)| {
-            matches!(**unit,
+pub fn units_meet_enemies(units: &mut [UnitBundle], enemies: &mut [Enemy]) {
+    for enemy in enemies.iter_mut() {
+        let suitable_units = units.iter_mut().filter(|UnitBundle(unit, _)| {
+            matches!(*unit,
                 Unit::Patrolling(_, combat_type) if combat_type == enemy.combat_type
             )
         });
-        for (unit_entity, mut unit, mut health) in suitable_units {
+        for UnitBundle(unit, health) in suitable_units {
             if unit.progress_percent() >= enemy.remaining_percent() {
                 unit.return_to_base();
-                commands.entity(enemy_entity).despawn();
-                health.take_hit(unit_entity, &mut commands);
+                todo!("commands.entity(enemy_entity).despawn();");
+                todo!("health.take_hit();");
             }
         }
     }
@@ -313,11 +288,11 @@ impl EnemySpawner {
         Duration::from_secs_f64(seconds_to_next_spawn)
     }
 
-    fn tick(&mut self, time: &Time, mut commands: Commands) {
+    fn tick(&mut self, time: &Time, enemies: &mut Vec<Enemy>) {
         self.time_to_next_spawn.tick(time.delta());
 
         if self.time_to_next_spawn.finished() {
-            commands.spawn().insert(Enemy::new(
+            enemies.push(Enemy::new(
                 Duration::from_secs_f64(30.0),
                 CombatType::generate_random(),
             ));
@@ -330,8 +305,8 @@ impl EnemySpawner {
     }
 }
 
-pub fn spawn_enemies(mut enemy_spawner: ResMut<EnemySpawner>, time: Res<Time>, commands: Commands) {
-    enemy_spawner.tick(&time, commands);
+pub fn spawn_enemies(enemy_spawner: &mut EnemySpawner, time: &Time, enemies: &mut Vec<Enemy>) {
+    enemy_spawner.tick(&time, enemies);
 }
 
 #[derive(Debug, Clone)]
@@ -370,11 +345,11 @@ impl<T> TokenPool<T> {
 }
 
 pub fn ticker(
-    time: Res<Time>,
-    mut units: Query<&mut Unit>,
-    mut enemies: Query<&mut Enemy>,
-    mut game_state: ResMut<State<GameState>>,
-    mut play_time: ResMut<PlayTime>,
+    time: &Time,
+    units: &mut [Unit],
+    enemies: &mut [Enemy],
+    game_state: &mut GameState,
+    play_time: &mut PlayTime,
 ) {
     for mut unit in units.iter_mut() {
         unit.tick(&time);
@@ -383,7 +358,7 @@ pub fn ticker(
     for mut enemy in enemies.iter_mut() {
         enemy.tick(&time);
         if enemy.progress.finished() {
-            game_state.set(GameState::GameOver).unwrap();
+            *game_state = GameState::GameOver;
         }
     }
 
@@ -391,13 +366,12 @@ pub fn ticker(
 }
 
 pub fn gui(
-    egui_ctx: ResMut<EguiContext>,
-    _assets: Res<AssetServer>,
-    mut units: Query<(&mut Unit, &Health)>,
-    mut enemies: Query<&mut Enemy>,
-    mut parking_spaces: ResMut<TokenPool<ParkingSpace>>,
-    game_state: Res<State<GameState>>,
-    play_time: Res<PlayTime>,
+    egui_ctx: &mut CtxRef,
+    units: &mut [UnitBundle],
+    enemies: &mut [Enemy],
+    parking_spaces: &mut TokenPool<ParkingSpace>,
+    game_state: &GameState,
+    play_time: &PlayTime,
 ) {
     let dark_purple = Color32::from_rgb(77, 53, 77).linear_multiply(0.25);
 
@@ -406,9 +380,9 @@ pub fn gui(
     visuals.extreme_bg_color = dark_purple;
     visuals.widgets.noninteractive.bg_fill = dark_purple;
 
-    egui_ctx.ctx().set_visuals(visuals);
+    egui_ctx.set_visuals(visuals);
 
-    egui::TopPanel::top("top_panel").show(egui_ctx.ctx(), |ui| {
+    egui::TopPanel::top("top_panel").show(egui_ctx, |ui| {
         // The top panel is often a good place for a menu bar:
         egui::menu::bar(ui, |ui| {
             egui::menu::menu(ui, "File", |ui| {
@@ -419,8 +393,8 @@ pub fn gui(
         });
     });
 
-    egui::CentralPanel::default().show(egui_ctx.ctx(), |ui| {
-        if *game_state.current() == GameState::GameOver {
+    egui::CentralPanel::default().show(egui_ctx, |ui| {
+        if *game_state == GameState::GameOver {
             ui.set_enabled(false);
         }
 
@@ -446,8 +420,8 @@ pub fn gui(
         ui.heading("Stored Units");
         ui.label("Repair damaged units here.");
 
-        for (mut unit, health) in units.iter_mut() {
-            match &*unit {
+        for UnitBundle(unit, health) in units.iter_mut() {
+            match unit {
                 Unit::InStorage => {
                     ui.horizontal(|ui| {
                         ui.label(format!("Health: {}. Unit", health));
@@ -456,7 +430,7 @@ pub fn gui(
                         }
 
                         if ui.button("Bring out of storage").clicked() {
-                            unit.un_store(&mut parking_spaces);
+                            unit.un_store(parking_spaces);
                         }
                     });
                 }
@@ -478,8 +452,8 @@ pub fn gui(
             parking_spaces.max_count
         ));
         ui.label("Prepare your units for battle in one of the lanes and send them off to fight here!");
-        for (mut unit, health) in units.iter_mut() {
-            match &*unit {
+        for UnitBundle(unit, health) in units.iter_mut() {
+            match &unit {
                 Unit::UnStoring(timer, _) => {
                     ui.label(format!(
                         "Health: {}. Coming out of storage. {:.0}% / {:.1} seconds to go.",
@@ -543,8 +517,8 @@ pub fn gui(
         ui.separator();
         ui.heading("Waiting to Return");
         ui.label("Units here are just standing around when they could be fighting or getting repaired! Move them on as quickly as you can!");
-        for (mut unit, health) in units.iter_mut() {
-            match &*unit {
+        for UnitBundle(unit, health) in units.iter_mut() {
+            match &unit {
                 Unit::WaitingToPark => {
                     ui.horizontal(|ui| {
                         ui.label(format!("Health: {}. Unit", health));
@@ -558,7 +532,7 @@ pub fn gui(
                         }
 
                         if ui.button("Park").clicked() {
-                            unit.park_after_returning(&mut parking_spaces);
+                            unit.park_after_returning(parking_spaces);
                         }
                     });
                 }
@@ -598,7 +572,7 @@ pub fn gui(
                     );
                 }
 
-                for (unit, health) in units.iter_mut() {
+                for UnitBundle(unit, health) in units.iter_mut() {
                     match &*unit {
                         Unit::Patrolling(progress, unit_combat_type)
                             if *unit_combat_type == combat_type =>
@@ -632,10 +606,10 @@ pub fn gui(
         }
     });
 
-    if *game_state.current() == GameState::GameOver {
+    if *game_state == GameState::GameOver {
         egui::Window::new("Hit!")
             .anchor(Align2::CENTER_CENTER, Vec2::new(0.0,0.0))
-            .show(egui_ctx.ctx(), |ui| {
+            .show(egui_ctx, |ui| {
                 ui.heading("Your base was hit! You are dead !!!!");
                 ui.label(format!(
                     "You survived for {:.0} seconds though, which is great! Now take a screenshot and brag to your friends about your m4d sk1llz :-D",
